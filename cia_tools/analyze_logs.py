@@ -28,6 +28,7 @@ def analyze_logs(args):
     logger.debug("main %s", args)
 
     re_taskcluster = re.compile(r"(\[taskcluster:.*\].*)")
+    re_taskcluster_wall_time = re.compile(r"\[taskcluster.*Wall Time: (?:(.*)h)?(?:(.*)m)?(?:(.*)s)")
     re_revision_env = re.compile(r"(MOZ_SOURCE_CHANGESET|GECKO_HEAD_REV)(=|': ')([\w-]+)")
     re_revision_checkout = re.compile(r"'--revision', '([\w-]+)'")
     re_tinderbox_summary = re.compile(r"TinderboxPrint: ([^<]+)<br/>(.*)")
@@ -149,6 +150,19 @@ def analyze_logs(args):
                         data_revision[job_type_name]["taskcluster"] = []
                     taskcluster_message = match.group(1)
                     data_revision[job_type_name]["taskcluster"].append(taskcluster_message)
+                    continue
+                # Get any taskcluster Wall Timemessages
+                match = re_taskcluster_wall_time.match(line)
+                if match:
+                    (hours, minutes, seconds) = match.groups()
+                    if "taskcluster_wall_time" not in data_revision[job_type_name]:
+                        data_revision[job_type_name]["taskcluster_walltime"] = 0
+                        if hours:
+                            data_revision[job_type_name]["taskcluster_walltime"] += 3600*float(hours)
+                        if minutes:
+                            data_revision[job_type_name]["taskcluster_walltime"] += 60*float(minutes)
+                        if seconds:
+                            data_revision[job_type_name]["taskcluster_walltime"] += float(seconds)
                     continue
                 # Next Collect the revision. It will appear before any tests or the summary.
                 if not revision:
