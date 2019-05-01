@@ -32,6 +32,7 @@ def analyze_logs(args):
     re_revision_env = re.compile(r"(MOZ_SOURCE_CHANGESET|GECKO_HEAD_REV)(=|': ')([\w-]+)")
     re_revision_checkout = re.compile(r"'--revision', '([\w-]+)'")
     re_tinderbox_summary = re.compile(r"TinderboxPrint: ([^<]+)<br/>(.*)")
+    re_perfherder_data = re.compile(r"PERFHERDER_DATA: (.*)")
     #
     # webpagetest
     re_test_status = re.compile(r"(TEST-[A-Z-]+|PROCESS-CRASH) \| (.*)")
@@ -236,6 +237,14 @@ def analyze_logs(args):
                     data_revision[job_type_name][unittest_suite]['failed'] += unittest_fail
                     continue
 
+                # Look for Perfherder
+                match = re_perfherder_data.search(line)
+                if match:
+                    if 'perfherder_data' not in data_revision[job_type_name]:
+                        data_revision[job_type_name]["perfherder_data"] = {}
+                    perfherder_data = match.group(1)
+                    data_revision[job_type_name]["perfherder_data"].update(
+                        json.loads(perfherder_data))
                 # Look for the TinderboxPrint summary line.
                 match = re_tinderbox_summary.search(line)
                 if not match:

@@ -64,8 +64,11 @@ def _handle_simple_difference(difference, parent_key, re_ignore, left, right):
     child_difference = {}
 
     if type(left) == list and type(right) == list:
-        left.sort()
-        right.sort()
+        try:
+            left.sort()
+            right.sort()
+        except TypeError:
+            pass  # XXX items in the list are not sortable.
 
     if left == right:
         pass
@@ -141,13 +144,17 @@ def generate_difference(re_ignore, left, right):
                 if len(difference_values) > 1 or len(difference_values) == 1 and difference_values[0]:
                     difference[key] = key_difference
         elif type(left_value) == list:
-            left_set = set(left_value)
-            right_set = set(right_value)
-            key_difference = list(left_set - right_set)
-            both_set = left_set.intersection(right_set)
-            key_difference.extend(["!%s" % r for r in right_set - both_set])
-            if key_difference:
-                difference[key] = key_difference
+            try:
+                left_set = set(left_value)
+                right_set = set(right_value)
+                key_difference = list(left_set - right_set)
+                both_set = left_set.intersection(right_set)
+                key_difference.extend(["!%s" % r for r in right_set - both_set])
+                if key_difference:
+                    difference[key] = key_difference
+            except TypeError:
+                # XXX items in the list are not hashable
+                difference[key] = "%s != %s" % (left, right)
         else:
             difference[key] = "%s != %s" % (left, right)
 
