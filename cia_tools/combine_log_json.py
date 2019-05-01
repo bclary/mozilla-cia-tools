@@ -188,7 +188,6 @@ def munge_test_data(test_data):
             match = re_test_remainder.search(test_line_parts[-1])
             if match:
                 test_line = ' | '.join(test_line_parts[:-1])
-            test_line = ' | '.join((test_status, test_line))
 
             # munge the test line
             test_line = re.sub(r'(file:///builds/worker/workspace/build/|z:\\build\\build\\src\\)', '', test_line)
