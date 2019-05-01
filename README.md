@@ -6,6 +6,7 @@ We require python3 to get new library features and things and to cut ties with 2
 since we are going to have to do it anyway EOY.
 
 ```
+pip3 install --user virtualenv
 python3 -m virtualenv venv
 . venv/bin/activate
 pip install -r requirements.txt
