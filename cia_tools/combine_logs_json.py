@@ -64,11 +64,18 @@ def _handle_simple_difference(difference, parent_key, re_ignore, left, right):
     child_difference = {}
 
     if type(left) == list and type(right) == list:
-        try:
-            left.sort()
-            right.sort()
-        except TypeError:
-            pass  # XXX items in the list are not sortable.
+        child_difference = []
+        if parent_key == 'replicates':
+            # Explicitly handle perfherder replicates.
+            handled = True
+            for i in range(len(left)):
+                child_difference.append(left[i] - right[i])
+        else:
+            try:
+                left.sort()
+                right.sort()
+            except TypeError:
+                pass  # XXX items in the list are not sortable.
 
     if left == right:
         pass
@@ -103,13 +110,19 @@ def _handle_simple_difference(difference, parent_key, re_ignore, left, right):
     else:
         handled = False
 
-    if handled and child_difference:
-        if parent_key is None:
-            difference.update(child_difference)
-        elif parent_key in difference:
-            difference[parent_key].update(child_difference)
-        else:
-            difference[parent_key] = child_difference
+    if handled:
+        if not child_difference:
+            if parent_key == 'name':
+                # keep name attributes to allow tracking of other
+                # differences
+                child_difference = left
+        if child_difference:
+            if parent_key is None:
+                difference.update(child_difference)
+            elif parent_key in difference:
+                difference[parent_key].update(child_difference)
+            else:
+                difference[parent_key] = child_difference
 
     return handled
 
@@ -137,24 +150,59 @@ def generate_difference(re_ignore, left, right):
         elif type(left_value) == dict:
             key_difference = generate_difference(re_ignore, left_value, right_value)
             if not key_difference:
-                pass
+                if 'name' in left_value:
+                    key_difference = left_value
             else:
                 # do not include objects of the form {"key": {}} or {"key": []}
                 difference_values = list(key_difference.values())
                 if len(difference_values) > 1 or len(difference_values) == 1 and difference_values[0]:
                     difference[key] = key_difference
         elif type(left_value) == list:
-            try:
-                left_set = set(left_value)
-                right_set = set(right_value)
-                key_difference = list(left_set - right_set)
-                both_set = left_set.intersection(right_set)
-                key_difference.extend(["!%s" % r for r in right_set - both_set])
-                if key_difference:
-                    difference[key] = key_difference
-            except TypeError:
-                # XXX items in the list are not hashable
-                difference[key] = "%s != %s" % (left, right)
+            if key == 'replicates':
+                # Explicitly handle perfherder replicates.
+                handled = True
+                key_difference = []
+                for i in range(len(left_value)):
+                    key_difference.append(left_value[i] - right_value[i])
+            else:
+                try:
+                    left_set = set(left_value)
+                    right_set = set(right_value)
+                    key_difference = list(left_set - right_set)
+                    both_set = left_set.intersection(right_set)
+                    key_difference.extend(["!%s" % r for r in right_set - both_set])
+                except TypeError:
+                    # XXX items in the list are not hashable
+                    key_difference = []
+                    while left_value:
+                        left_value_item = left_value.pop(0)
+                        # assume the dicts are keyed by name which is the
+                        # case for perfherder. First attempt to find the pair
+                        # left_value_item['name'] == right_value[rindex]['name']
+                        left_value_item_name = left_value_item.get('name', None)
+                        right_value_item_name = None
+                        if left_value_item_name:
+                            # find the right_value item which has the same name value
+                            rindex = -1
+                            for right_value_item in right_value:
+                                rindex +=1
+                                right_value_item_name = right_value_item.get('name', None)
+                                if left_value_item_name == right_value_item_name:
+                                    break
+                        if left_value_item_name == right_value_item_name:
+                            del right_value[rindex]
+                            key_difference.append(generate_difference(re_ignore, left_value_item, right_value_item))
+                        #else:
+                        #    # No name key, just do the list items in order
+                        #    try:
+                        #        right_value_item = right_value.pop(0)
+                        #    except IndexError:
+                        #        right_value_item = None
+                    while right_value:
+                        right_value_item = right_value.pop(0)
+                        key_difference.append(generate_difference(re_ignore, None, right_value_item))
+            if key_difference:
+                difference[key] = key_difference
         else:
             difference[key] = "%s != %s" % (left, right)
 
