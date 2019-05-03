@@ -162,11 +162,11 @@ command line through the use of the @ syntax.
 Each argument and its value must be on separate lines in the file.
 ```
 
-### combine_log_json.py
+### combine_logs_json.py
 
 ```
-$ ./combine_log_json.py --help
-usage: combine_log_json.py [-h] [--file FILES] [--alias ALIASES]
+$ ./combine_logs_json.py --help
+usage: combine_logs_json.py [-h] [--file FILES] [--alias ALIASES]
                            [--differences] [--ignore IGNORE]
                            [--munge-test-data]
 
