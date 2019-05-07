@@ -220,14 +220,19 @@ def generate_difference(re_ignore, left, right):
     return difference
 
 
+#@profile
 def munge_test_data(test_data):
-    re_test_remainder = re.compile(r'([\d]+ [\d]+ [(][\d]+[)]%|[\d]+ / [\d]+ [(][\d]+%[)]|took [\d]+ms| [(]time: [\d]+ms[)]|\[[\d.]+ s\])$')
+    #re_test_remainder = re.compile(r'([\d]+ [\d]+ [(][\d]+[)]%|[\d]+ / [\d]+ [(][\d]+%[)]|took [\d]+ms|test completed [(]time: [\d]+ms[)]|\[[\d.]+ s\])$')
+    re_test_remainder = re.compile(r'([\d]+ / [\d]+ [(][\d]+%[)]|took [\d]+ms|test completed [(]time: [\d]+ms[)]|\[[\d.]+ s\])$')
     re_ignorable_test_line = re.compile(r'started process GECKO|Main app process: exit 0')
     re_javascript_date = re.compile(r'Date[(][\d]+[)]')
     re_talos_process_1 = re.compile(r'[\d]+: exit ([\d]+)')
     re_talos_process_2 = re.compile(r'started process [\d]+')
     re_dom_media = re.compile(r'\[((?:started|finished).*)t=[\d.]+\]')
     re_mochitest_guid = re.compile(r'should have a guid - "[a-z0-9]+"')
+    re_paths = re.compile(r'(file:///builds/worker/workspace/build/|z:\\build\\build\\src\\)')
+    re_task = re.compile(r'task_[0-9]+')
+    re_localhost = re.compile(r'http://localhost:[\d]+/[\d]+/[\d]+/')
 
     for test_status in test_data:
         if 'list' not in test_data[test_status]:
@@ -245,9 +250,9 @@ def munge_test_data(test_data):
                 test_line = ' | '.join(test_line_parts[:-1])
 
             # munge the test line
-            test_line = re.sub(r'(file:///builds/worker/workspace/build/|z:\\build\\build\\src\\)', '', test_line)
-            test_line = re.sub(r'task_[0-9]+', 'task', test_line)
-            test_line = re.sub(r'http://localhost:[\d]+/[\d]+/[\d]+/', 'http://localhost:9999/9999/9/', test_line) # reftest
+            test_line = re_paths.sub('', test_line)
+            test_line = re_task.sub('task', test_line)
+            test_line = re_localhost.sub('http://localhost:9999/9999/9/', test_line) # reftest
             test_line = 'Date(...)'.join(re_javascript_date.split(test_line)) # javascript tests.
             test_line = 'started process 9999'.join(re_talos_process_2.split(test_line)) # Talos
             match = re_talos_process_1.search(test_line)
