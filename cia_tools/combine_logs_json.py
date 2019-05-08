@@ -191,7 +191,9 @@ def generate_difference(re_ignore, left, right):
                                     break
                         if left_value_item_name == right_value_item_name:
                             del right_value[rindex]
-                            key_difference.append(generate_difference(re_ignore, left_value_item, right_value_item))
+                            left_right_difference = generate_difference(re_ignore, left_value_item, right_value_item)
+                            if left_right_difference:
+                                key_difference.append(left_right_difference)
                         #else:
                         #    # No name key, just do the list items in order
                         #    try:
