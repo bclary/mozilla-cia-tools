@@ -204,6 +204,9 @@ Each argument and its value must be on separate lines in the file.
 
     args = parser.parse_args()
 
+    if args.revision_url:
+        (args.repo, _, args.revision) = args.revision_url.split('/')[-3:]
+
     logging.basicConfig(level=getattr(logging, args.log_level))
     logger = logging.getLogger()
     logger.debug("main %s", args)

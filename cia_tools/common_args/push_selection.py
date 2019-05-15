@@ -43,6 +43,11 @@ def get_parser():
         help="Push Revision.")
 
     range_group.add_argument(
+        "--revision-url",
+        default=None,
+        help="Url to push revision which can be used in place of --repo and --revision.")
+
+    range_group.add_argument(
         "--revision-range",
         default=None,
         help="Push revision range fromchange tochange.")
