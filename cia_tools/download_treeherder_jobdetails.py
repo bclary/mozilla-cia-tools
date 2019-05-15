@@ -129,6 +129,12 @@ def download_treeherder_job_details(args):
                                              destination_dir)
                             else:
                                 os.makedirs(destination_dir)
+                                if args.alias:
+                                    cwd = os.getcwd()
+                                    os.chdir(args.output)
+                                    if not os.path.islink(args.alias):
+                                        os.symlink(push['revision'], args.alias)
+                                    os.chdir(cwd)
                         if not os.path.exists(destination):
                             utils.download_file(job_detail_url, destination)
                         else:
@@ -144,8 +150,14 @@ def main():
     parser = argparse.ArgumentParser(
         description="""Download Test Log files from Treeherder/Taskcluster.
 
-blah blah metadata encoded file names
-examples blah blah
+If --download-job-details is specified, each file downloaded will be
+saved to the output directory using the path to the job detail and a
+file name encoded with meta data as:
+
+output/revision/job_guid/job_guid_run/path/platform,buildtype,job_name,job_type_symbol,filename
+
+if --alias is specified, a soft link will be created from
+output/revision to output/alias.
 
 """,
         formatter_class=common_args.ArgumentFormatter,
@@ -181,6 +193,12 @@ Each argument and its value must be on separate lines in the file.
         dest="output",
         default="output",
         help="Directory where to save downloaded job details.")
+
+    parser.add_argument(
+        "--alias",
+        dest="alias",
+        default=None,
+        help="Alias (soft link) to revision subdirectory where the downloaded job details were saved.")
 
     parser.set_defaults(func=download_treeherder_job_details)
 
