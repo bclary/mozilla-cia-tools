@@ -50,6 +50,6 @@ def get_parser():
     range_group.add_argument(
         "--revision-range",
         default=None,
-        help="Push revision range fromchange tochange.")
+        help="Push revision range fromchange-tochange.")
 
     return parser

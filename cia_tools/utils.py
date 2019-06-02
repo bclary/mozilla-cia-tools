@@ -29,7 +29,8 @@ def get_treeherder_push_params(args):
     elif args.revision:
         params = {'revision': args.revision}
     elif args.revision_range:
-        params = {'fromchange': args.fromchange, 'tochange': args.tochange}
+        (fromchange, tochange) = args.revision_range.split('-')
+        params = {'fromchange': fromchange, 'tochange': tochange}
     if args.author:
         params['author'] = args.author
     return params
