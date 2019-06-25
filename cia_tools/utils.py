@@ -107,7 +107,7 @@ def download_file(url, dest, max_attempts=3):
         with local_file:
             with open(dest, 'wb') as dest_file:
                 while True:
-                    chunk = local_file.read(4096)
+                    chunk = local_file.read(10485760)
                     if not chunk:
                         break
                     dest_file.write(chunk)
@@ -119,7 +119,7 @@ def download_file(url, dest, max_attempts=3):
             if not req.ok:
                 req.raise_for_status()
             with open(dest, 'wb') as dest_file:
-                for chunk in req.iter_content(chunk_size=4096):
+                for chunk in req.iter_content(chunk_size=10485760):
                     dest_file.write(chunk)
             break
         except requests.exceptions.HTTPError as http_error:
