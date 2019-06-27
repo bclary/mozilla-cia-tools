@@ -97,12 +97,14 @@ def analyze_logs(args):
         filepath = filepaths[i]
         logger.debug("%s\nBegin processing %s", "=" * 80, filepath)
         revision = None
-        # metadata (test|build)-osplatform,buildtype,testsuite-(e10s)?-chunk
-        metadata = os.path.basename(filepath).split(",")[:-1]
+        # metadata (test|build)-osplatform,buildtype,testsuite-(e10s)?-chunk,jobsymbol
+        metadata = dict(zip(
+            ('testplatform', 'buildtype', 'testsuite', 'jobsymbol'),
+            os.path.basename(filepath).split(",")[:-1]))
 
         # Collect test status by test suite for debug output
         # categorizing the detected test status by test suite.
-        test_suite = re.sub('(-e10s|-1proc)?(-[0-9]+)?$', '', metadata[2])
+        test_suite = re.sub('(-e10s|-1proc)?(-[0-9]+)?$', '', metadata['testsuite'])
         if test_suite.startswith('awsy'):
             test_suite = 'awsy'
         elif test_suite.startswith('crashtest'):
@@ -121,11 +123,11 @@ def analyze_logs(args):
         if test_suite not in test_suite_status:
             test_suite_status[test_suite] = set()
 
-        job_type_name = metadata[0] + '/' + metadata[1] + '-'
+        job_type_name = metadata['testplatform'] + '/' + metadata['buildtype'] + '-'
         if args.dechunk:
-            job_type_name += re.sub('(-[0-9]+)?$', '', metadata[2])
+            job_type_name += re.sub('(-[0-9]+)?$', '', metadata['testsuite'])
         else:
-            job_type_name += metadata[2]
+            job_type_name += metadata['testsuite']
 
         data_revision = {
             job_type_name: {},
