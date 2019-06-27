@@ -63,6 +63,10 @@ def analyze_logs(args):
 
     re_unittest_totals = re.compile(r'TinderboxPrint: (geckoview-junit|jittest|cppunittest|cppunittest-cppunittest|gtest|gtest-gtest)<br/>([0-9]+)/(.*)')
 
+    ### test isolation ###
+    re_isolation_jobsymbol = re.compile(r'(.*)-(it|id)$')
+    ######################
+
     data = {}
     tinderbox_print_keys = set()
     test_suite_status = {}
@@ -123,11 +127,20 @@ def analyze_logs(args):
         if test_suite not in test_suite_status:
             test_suite_status[test_suite] = set()
 
+        jobsymbol = metadata['jobsymbol']
         job_type_name = metadata['testplatform'] + '/' + metadata['buildtype'] + '-'
         if args.dechunk:
             job_type_name += re.sub('(-[0-9]+)?$', '', metadata['testsuite'])
+            isolation_match = re_isolation_jobsymbol.match(jobsymbol)
+            if isolation_match:
+                # Remove the trailing chunk from the jobsymbol then re-add the
+                # isolation type.
+                (jobsymbol, isolation_type) = isolation_match.groups()
+                jobsymbol = re.sub('(-?[0-9]+)?$', '', jobsymbol) + '-' + isolation_type
         else:
             job_type_name += metadata['testsuite']
+
+        job_type_name += '/' + jobsymbol
 
         data_revision = {
             job_type_name: {},
