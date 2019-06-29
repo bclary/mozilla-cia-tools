@@ -265,7 +265,7 @@ def analyze_logs(args):
                 if not match:
                     continue
                 if 'tinderbox_data' not in data_revision[job_type_name]:
-                    data_revision[job_type_name]["tinderbox_data"] = {}
+                    tinderbox_data = data_revision[job_type_name]["tinderbox_data"] = {}
                 key = match.group(1)
                 tinderbox_print_keys.add(key)
                 value = match.group(2)
