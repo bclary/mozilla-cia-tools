@@ -307,10 +307,7 @@ def analyze_logs(args):
             data_revision[job_type_name]["warnings"].append(warning)
             logger.warning(warning)
         if revision:
-            if args.dechunk:
-                data[revision] = combine_data_revisions(job_type_name, data[revision], data_revision)
-            else:
-                data[revision].update(data_revision)
+            data[revision] = combine_data_revisions(job_type_name, data[revision], data_revision)
         else:
             if 'warnings' not in data_revision[job_type_name]:
                 data_revision[job_type_name]['warnings'] = []
