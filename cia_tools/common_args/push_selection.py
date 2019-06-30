@@ -1,5 +1,6 @@
 """
 standardized argparse parser for push_selection
+see PushViewSet in https://github.com/mozilla/treeherder/blob/master/treeherder/webapp/api/push.py
 """
 
 import argparse
@@ -41,6 +42,11 @@ def get_parser():
         "--revision",
         default=None,
         help="Push Revision.")
+
+    range_group.add_argument(
+        "--commit-revision",
+        default=None,
+        help="Either Push Revision or any commit referenced in the push.")
 
     range_group.add_argument(
         "--revision-url",
