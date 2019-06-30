@@ -8,11 +8,6 @@ parsers module
 
 import argparse
 
-from .log_level import get_parser
-from .push_selection import get_parser
-from .urls import get_parser
-
-
 class ArgumentFormatter(argparse.ArgumentDefaultsHelpFormatter,
                         argparse.RawTextHelpFormatter):
     """

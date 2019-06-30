@@ -35,6 +35,9 @@ def get_treeherder_push_params(args):
         params = {'commit_revision': args.commit_revision}
     if args.author:
         params['author'] = args.author
+    # limit the response if no arguments given.
+    if not params:
+        params['count'] = 1
     return params
 
 
@@ -171,7 +174,7 @@ def merge_dicts(left, right):
     return result
 
 
-def query_active_data(query_json, limit=10):
+def query_active_data(args, query_json, limit=10):
     """
     docstring
     """
@@ -182,12 +185,10 @@ def query_active_data(query_json, limit=10):
     logger.debug("query_active_data\n%s",
                  json.dumps(query_json, indent=2, sort_keys=True))
 
-    url = 'https://activedata.allizom.org/query'
-
     query = json.dumps(query_json)
     while True:
         try:
-            req = requests.post(url, data=query, stream=True,
+            req = requests.post(args.activedata, data=query, stream=True,
                                 headers={'user-agent': USER_AGENT})
             if req.ok:
                 try:
@@ -202,15 +203,15 @@ def query_active_data(query_json, limit=10):
             elif req.status_code == 503:
                 # Server is too busy.
                 # See https://bugzilla.mozilla.org/show_bug.cgi?id=1146983#c10
-                logger.warning("HTTP 503 Server Too Busy: url %s", url)
+                logger.warning("HTTP 503 Server Too Busy: url %s", args.activedata)
             else:
                 logger.warning("Unable to open url %s : %s",
-                               url, req.reason)
+                               args.activedata, req.reason)
                 return None
         except requests.exceptions.ConnectionError as err:
             logger.warning("ConnectionError: %s. Will retry...", err)
         except requests.exceptions.RequestException:
-            logger.exception('Unable to open %s', url)
+            logger.exception('Unable to open %s', args.activedata)
             break
 
         # Wait and try again.
@@ -219,7 +220,7 @@ def query_active_data(query_json, limit=10):
     return None
 
 
-def query_tests(branch, revision="", include_passing_tests=False):
+def query_tests(args, revision=""):
     """Retrieve tests from ActiveData for the specified
     branch and revision. If all is True, return
     all tests otherwise only return test failures.
@@ -231,7 +232,7 @@ def query_tests(branch, revision="", include_passing_tests=False):
             "and":[
                 {
                     "eq": {
-                        "build.branch": branch,
+                        "build.branch": args.repo,
                     }
                 }
             ]
@@ -245,13 +246,13 @@ def query_tests(branch, revision="", include_passing_tests=False):
     else:
         raise ValueError("query_test_failures: revision must be 12 or 40 characters.")
 
-    if not include_passing_tests:
+    if not args.include_passing_tests:
         query_json["where"]["and"].append({"eq":{"result.ok":False}})
 
-    j = query_active_data(query_json, limit=10000)
+    j = query_active_data(args, query_json, limit=10000)
     if not j:
         logger.warning('query_tests(%s, %s, include_passing_tests=%s) returned None',
-                       branch, revision, include_passing_tests)
+                       args.repo, revision, args.include_passing_tests)
         return None
 
     tests = []

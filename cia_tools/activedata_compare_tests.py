@@ -18,10 +18,12 @@ import json
 import logging
 import re
 
-import thclient
-
-import common_args
 import utils
+
+from treeherder import get_pushes_json
+
+from common_args import (ArgumentFormatter, log_level_args, pushes_args,
+                         treeherder_urls_args, activedata_urls_args)
 
 
 def compare_tests_load_push_tests(data, args, push, filters=None, push_label=None,
@@ -52,7 +54,7 @@ def compare_tests_load_push_tests(data, args, push, filters=None, push_label=Non
     if push_label not in data:
         data[push_label] = {}
 
-    response = utils.query_active_data(query_json, limit=10000)
+    response = utils.query_active_data(args, query_json, limit=10000)
 
     for item in response['data']:
         # item contains {u'count': 14181, u'run': {u'key': u'test-linux64/opt-jsreftest-e10s-2'}}
@@ -93,11 +95,7 @@ def compare_tests(args):
     logger.debug('compare_tests args %s', args)
 
     data = {}
-    push_params = utils.get_treeherder_push_params(args)
-
-    client = thclient.client.TreeherderClient(server_url=args.treeherder)
-    pushes = client.get_pushes(args.repo, **push_params)
-    logger.debug('compare_tests pushes\n:%s', pushes)
+    pushes = get_pushes_json(args)
 
     if not pushes:
         logger.warning("compare_tests: no pushes found.")
@@ -173,26 +171,38 @@ def compare_tests(args):
 
 
 def main():
-    log_level_parser = common_args.log_level.get_parser()
-    push_selection_parser = common_args.push_selection.get_parser()
-    urls_parser = common_args.urls.get_parser()
+    parent_parsers = [log_level_args.get_parser(),
+                      pushes_args.get_parser(),
+                      treeherder_urls_args.get_parser(),
+                      activedata_urls_args.get_parser()]
+
+    additional_descriptions = [parser.description for parser in parent_parsers
+                               if parser.description]
+    additional_epilogs = [parser.epilog for parser in parent_parsers if parser.epilog]
 
     parser = argparse.ArgumentParser(
-        description="""ActiveData compare-tests""",
-        formatter_class=common_args.ArgumentFormatter,
-        epilog="""You can save a set of arguments to a file and specify them later
+        description="""ActiveData compare-tests
+
+%s
+""" % '\n\n'.join(additional_descriptions),
+        formatter_class=ArgumentFormatter,
+        epilog="""
+%s
+
+You can save a set of arguments to a file and specify them later
 using the @argfile syntax. The arguments contained in the file will
 replace @argfile in the command line. Multiple files can be loaded
 into the command line through the use of the @ syntax. Each argument
-and its value must be on separate lines in the file.""",
-        parents=[log_level_parser, urls_parser, push_selection_parser],
+and its value must be on separate lines in the file.
+"""  % '\n\n'.join(additional_epilogs),
+        parents=parent_parsers,
         fromfile_prefix_chars='@'
         )
 
     parser.add_argument("--combine-chunks",
-                                      action="store_true",
-                                      default=False,
-                                      help="Combine chunks")
+                        action="store_true",
+                        default=False,
+                        help="Combine chunks")
 
     parser.add_argument(
         "--output-push-differences-only",

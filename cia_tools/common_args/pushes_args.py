@@ -1,5 +1,5 @@
 """
-standardized argparse parser for push_selection
+standardized argparse parser for push_args
 see PushViewSet in https://github.com/mozilla/treeherder/blob/master/treeherder/webapp/api/push.py
 """
 
@@ -9,9 +9,11 @@ import argparse
 def get_parser():
 
     parser = argparse.ArgumentParser(
-        description="push selection parser description",
-        epilog="push selection parser epilog",
-        add_help=False)
+        add_help=False,
+        description="""Push Related Arguments
+
+If a push isn't selected, the most recent push will be returned.
+""")
 
     parser.add_argument(
         "--repo",

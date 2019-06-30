@@ -9,7 +9,7 @@ import re
 
 from numbers import Number
 
-import common_args
+from common_args import ArgumentFormatter
 
 def compare_aliases(re_ignore, alias_names, data):
     combined_keys = list(data["combined"].keys())
@@ -160,7 +160,6 @@ def generate_difference(re_ignore, left, right):
         elif type(left_value) == list:
             if key == 'replicates':
                 # Explicitly handle perfherder replicates.
-                handled = True
                 key_difference = []
                 for i in range(len(left_value)):
                     key_difference.append(left_value[i] - right_value[i])
@@ -273,7 +272,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="""Combine analyzed Test Log json files.
 """,
-        formatter_class=common_args.ArgumentFormatter,
+        formatter_class=ArgumentFormatter,
         epilog="""You can save a set of arguments to a file and specify them later
 using the @argfile syntax. The arguments contained in the file will
 replace @argfile in the command line. Multiple files can be loaded

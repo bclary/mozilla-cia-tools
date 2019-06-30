@@ -8,75 +8,38 @@ module docstring
 """
 
 import argparse
-import json
 import logging
 import os
 import re
-import time
 
 from urllib.parse import urlparse
 
-import thclient
-import requests
-
-import common_args
 import utils
+
+from common_args import (ArgumentFormatter, jobs_args, log_level_args, pushes_args,
+                         treeherder_urls_args)
+from treeherder import get_pushes_jobs_job_details_json
 
 
 def download_treeherder_job_details(args):
-    """
-    job_details subcommand
-    """
     logger = logging.getLogger()
-    logger.debug("treeherder %s", args)
 
-    push_params = utils.get_treeherder_push_params(args)
+    try:
+        re_download_job_details = re.compile(args.download_job_details)
+    except re.error:
+        logger.error("--download-job-details must be a valid regular "
+                     "expression not a file glob.")
+        return
 
-    if args.download_job_details:
-        try:
-            re_download_job_details = re.compile(args.download_job_details)
-        except re.error:
-            logger.error("--download-job-details must be a valid regular "
-                         "expression not a file glob.")
-            return
-    else:
-        re_download_job_details = None
-
-    client = thclient.client.TreeherderClient(server_url=args.treeherder)
-    pushes = client.get_pushes(args.repo, **push_params)
-    logger.debug('treeherder pushes\n:%s', pushes)
+    pushes = get_pushes_jobs_job_details_json(args)
     for push in pushes:
-        logger.debug("treeherder push:\n%s", json.dumps(push, indent=2, sort_keys=True))
-
-        jobs = client.get_jobs(args.repo, push_id=push['id'], count=None)
-        logger.debug("found %s jobs for push %s", len(jobs), push['id'])
-        for job in jobs:
-            logger.debug("job:\n%s", json.dumps(job, indent=2, sort_keys=True))
+        for job in push['jobs']:
             # get some job type meta data to allow us to encode the job type name and symbol
             # into the job detail file name.
             job_type_name = job['job_type_name']
             job_type_symbol = job['job_type_symbol']
 
-            # We can get all of the job details from get_job_details while
-            # get_job_log_url only gives us live_backing.log and live.log.
-            for attempt in range(3):
-                try:
-                    job_details = client.get_job_details(job_guid=job['job_guid'])
-                    logger.debug("job_details:\n%s",
-                                 json.dumps(job_details, indent=2, sort_keys=True))
-                    break
-                except requests.exceptions.ConnectionError:
-                    logger.exception('get_job_details attempt %s', attempt)
-                    if attempt != 2:
-                        time.sleep(30)
-            if attempt == 2:
-                logger.warning("Unable to get job_details for job_guid %s",
-                               job['job_guid'])
-                continue
-
-            for job_detail in job_details:
-                logger.debug("treeherder job_detail:\n%s",
-                             json.dumps(job_detail, indent=2, sort_keys=True))
+            for job_detail in job['job_details']:
                 job_detail_url = job_detail['url']
                 if job_detail_url:
                     url_parts = urlparse(job_detail_url)
@@ -102,10 +65,6 @@ def download_treeherder_job_details(args):
                         else:
                             (platform, job_name, buildtype) = (job_type_name, 'na', 'na')
 
-                        logger.debug("job_type_name %s, platform %s, buildtype %s, "
-                                     "job_name %s, job_type_symbol %s, file_name %s",
-                                     job_type_name, platform, buildtype,
-                                     job_name, job_type_symbol, file_name)
                         platform = re.sub(r'[^\w.-]', ',', re.sub(r'[^a-zA-Z0-9.-]', '_', platform))
                         file_name = "{},{},{},{},{}".format(
                             platform,
@@ -122,7 +81,6 @@ def download_treeherder_job_details(args):
                             file_name)
                         destination = os.path.abspath(destination)
                         destination_dir = os.path.dirname(destination)
-                        logger.debug("downloading %s to %s", job_detail_url, destination)
                         if not os.path.isdir(destination_dir):
                             if os.path.exists(destination_dir):
                                 logger.error("destination %s but is not a directory",
@@ -144,24 +102,35 @@ def download_treeherder_job_details(args):
 def main():
     """main"""
 
-    log_level_parser = common_args.log_level.get_parser()
-    push_selection_parser = common_args.push_selection.get_parser()
+    parent_parsers = [log_level_args.get_parser(),
+                      pushes_args.get_parser(),
+                      jobs_args.get_parser(),
+                      treeherder_urls_args.get_parser()]
+
+    additional_descriptions = [parser.description for parser in parent_parsers
+                               if parser.description]
+    additional_epilogs = [parser.epilog for parser in parent_parsers if parser.epilog]
 
     parser = argparse.ArgumentParser(
-        description="""Download Test Log files from Treeherder/Taskcluster.
+        description="""Download Job Details files from Treeherder/Taskcluster.
 
-If --download-job-details is specified, each file downloaded will be
-saved to the output directory using the path to the job detail and a
-file name encoded with meta data as:
+--download-job-details specifies a regular expression which will be matched
+against the base file name of the url to the file to select the files to be
+downloaded. This is not a shell glob pattern, but a full regular expression.
+Files will be saved to the output directory using the path to the job detail
+and a file name encoded with meta data as:
 
 output/revision/job_guid/job_guid_run/path/platform,buildtype,job_name,job_type_symbol,filename
 
 if --alias is specified, a soft link will be created from
 output/revision to output/alias.
 
-""",
-        formatter_class=common_args.ArgumentFormatter,
+%s
+
+""" % '\n\n'.join(additional_descriptions),
+        formatter_class=ArgumentFormatter,
         epilog="""
+%s
 
 You can save a set of arguments to a file and specify them later using
 the @argfile syntax. The arguments contained in the file will replace
@@ -170,20 +139,16 @@ command line through the use of the @ syntax.
 
 Each argument and its value must be on separate lines in the file.
 
-""",
-        parents=[log_level_parser, push_selection_parser],
+""" % '\n\n'.join(additional_epilogs),
+        parents=parent_parsers,
         fromfile_prefix_chars='@'
     )
-
-    parser.add_argument(
-        "--treeherder",
-        default='https://treeherder.mozilla.org',
-        help="Treeherder url.")
 
     parser.add_argument(
         "--download-job-details",
         dest="download_job_details",
         default=None,
+        required=True,
         help="""Regular expression matching Job details url basenames to be
         downloaded.  Example:live_backing.log|logcat.*.log. Default
         None.""")
@@ -206,6 +171,8 @@ Each argument and its value must be on separate lines in the file.
 
     if args.revision_url:
         (args.repo, _, args.revision) = args.revision_url.split('/')[-3:]
+
+    jobs_args.compile_filters(args)
 
     logging.basicConfig(level=getattr(logging, args.log_level))
     logger = logging.getLogger()

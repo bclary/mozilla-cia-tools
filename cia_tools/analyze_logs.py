@@ -16,16 +16,11 @@ import re
 
 from numbers import Number
 
-import common_args
+from common_args import ArgumentFormatter, log_level_args
 
 
 def analyze_logs(args):
-    """
-    log_analyzer subcommand
-    """
-    logging.basicConfig(level=getattr(logging, args.log_level))
     logger = logging.getLogger()
-    logger.debug("main %s", args)
 
     re_taskcluster = re.compile(r"(\[taskcluster:.*\].*)")
     re_taskcluster_wall_time = re.compile(r"\[taskcluster.*Wall Time: (?:(.*)h)?(?:(.*)m)?(?:(.*)s)")
@@ -322,7 +317,7 @@ def analyze_logs(args):
             logger.debug("test suite %s had statuses %s",
                          test_suite, list(test_suite_status[test_suite]))
 
-    print(json.dumps(data, indent=2, sort_keys=True))
+    return data
 
 
 def cast_to_numeric(value):
@@ -390,13 +385,13 @@ def combine_data_revisions(label, left, right):
 def main():
     """main"""
 
-    log_level_parser = common_args.log_level.get_parser()
+    log_level_parser = log_level_args.get_parser()
 
     parser = argparse.ArgumentParser(
         description="""Analyze downloaded Test Log files producing json summaries..
 
 """,
-        formatter_class=common_args.ArgumentFormatter,
+        formatter_class=ArgumentFormatter,
         epilog="""
 
 You can save a set of arguments to a file and specify them later using
@@ -412,6 +407,7 @@ Each argument and its value must be on separate lines in the file.
     )
 
     parser.add_argument("--path",
+                        required=True,
                         help="Log.")
 
     parser.add_argument("--filename",
@@ -428,6 +424,12 @@ Each argument and its value must be on separate lines in the file.
                         default=False,
                         help="Combine chunks.")
 
+    parser.add_argument(
+        "--raw",
+        action='store_true',
+        default=False,
+        help="Do not reformat/indent json.")
+
     parser.set_defaults(func=analyze_logs)
 
     args = parser.parse_args()
@@ -436,7 +438,12 @@ Each argument and its value must be on separate lines in the file.
     logger = logging.getLogger()
     logger.debug("main %s", args)
 
-    args.func(args)
+    data = args.func(args)
+
+    if args.raw:
+        print(data)
+    else:
+        print(json.dumps(data, indent=2))
 
 if __name__ == '__main__':
     main()

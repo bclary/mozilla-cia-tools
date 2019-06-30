@@ -1,5 +1,5 @@
 """
-standardized argparse parser for treeherder, activedata, ... urls.
+standardized argparse parser for treeherder urls.
 """
 
 import argparse
@@ -12,11 +12,4 @@ def get_parser():
         "--treeherder",
         default='https://treeherder.mozilla.org',
         help="Treeherder url.")
-
-    parser.add_argument(
-        "--activedata",
-        dest="activedata",
-        default='https://activedata.allizom.org/query',
-        help="ActiveData url.")
-
     return parser
