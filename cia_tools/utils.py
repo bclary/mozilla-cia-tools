@@ -25,7 +25,7 @@ def get_treeherder_push_params(args):
     """
     params = {}
     if args.date_range:
-        params = {'startdate': args.startdate, 'enddate': args.enddate}
+        params = dict(zip(('startdate', 'enddate'), args.date_range.split()))
     elif args.revision:
         params = {'revision': args.revision}
     elif args.revision_range:
