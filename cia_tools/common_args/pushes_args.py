@@ -20,10 +20,11 @@ If a push isn't selected, the most recent push will be returned.
         default='mozilla-central',
         choices=['mozilla-central',
                  'autoland',
-                 'inbound',
+                 'mozilla-inbound',
                  'try',
                  'mozilla-beta',
-                 'mozilla-release'],
+                 'mozilla-release',
+                 'mozilla-esr68'],
         help="repository name to query.")
 
     parser.add_argument(
