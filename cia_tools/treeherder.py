@@ -66,8 +66,8 @@ def get_pushes_jobs_json(args):
                 if job['result'] != 'testfailed':
                     job['bugzilla_suggestions'] = []
                     continue
-                bugzilla_suggestions_url = '%s/api/project/try/jobs/%s/bug_suggestions/' % (
-                    args.treeherder, job['id'])
+                bugzilla_suggestions_url = '%s/api/project/%s/jobs/%s/bug_suggestions/' % (
+                    (args.repo, args.treeherder, job['id']))
                 job['bugzilla_suggestions'] = utils.get_remote_json(bugzilla_suggestions_url)
     return pushes
 
