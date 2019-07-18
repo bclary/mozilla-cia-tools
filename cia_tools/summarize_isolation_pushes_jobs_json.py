@@ -69,32 +69,24 @@ def summarize_isolation_pushes_jobs_json(args):
                     if failure not in job_type_section_summary['failures']:
                         job_type_section_summary['failures'][failure] = {
                             'count': 0,
-                            'reproduced': {
-                                'repeated': 0,
-                                'id': 0,
-                                'it': 0,
-                            }
                         }
+                        if section_name != 'original':
+                            job_type_section_summary['failures'][failure]['reproduced'] = 0
                     job_type_section_summary['failures'][failure]['count'] += 1
             job_type_section_summary['run_time'] = run_time
             job_type_section_summary['jobs_failed'] = number_jobs_testfailed
             job_type_section_summary['jobs_total'] = len(section)
             job_type_section_summary['tests_failed'] = number_failures
-            job_type_section_summary['reproduced'] = {
-                'repeated': 0,
-                'id': 0,
-                'it': 0,
-            }
+            if section_name != 'original':
+                job_type_section_summary['reproduced'] = 0
         job_type_original_summary = job_type_summary['original']
         for section_name in ("repeated", "id", "it"):
             job_type_section_summary = job_type_summary[section_name]
             for failure in job_type_section_summary['failures']:
                 if failure in job_type_original_summary['failures']:
                     count = job_type_section_summary['failures'][failure]['count']
-                    job_type_original_summary['failures'][failure]['reproduced'][section_name] += count
-                    job_type_original_summary['reproduced'][section_name] += count
-                    job_type_section_summary['failures'][failure]['reproduced'][section_name] += count
-                    job_type_section_summary['reproduced'][section_name] += count
+                    job_type_section_summary['failures'][failure]['reproduced'] += count
+                    job_type_section_summary['reproduced'] += count
     if not args.include_failures:
         # Remove failures lists from sections
         for job_type_name in summary:
@@ -170,8 +162,8 @@ def output_csv(summary):
     for section_name in ("original", "repeated", "id", "it"):
         for property_name in ("run_time", "jobs_failed", "jobs_total", "tests_failed"):
             line += "%s.%s," % (section_name, property_name)
-        for reproduced_property_name in ("repeated", "id", "it"):
-            line += "%s.reproduced.%s," % (section_name, reproduced_property_name)
+        if section_name != "original":
+            line += "%s.reproduced," % section_name
     line = line[0:-1]
     print(line)
     for job_type_name in summary:
@@ -181,9 +173,8 @@ def output_csv(summary):
             job_type_section = job_type_summary[section_name]
             for property_name in ("run_time", "jobs_failed", "jobs_total", "tests_failed"):
                 line += "%s," % job_type_section[property_name]
-            for reproduced_property_name in ("repeated", "id", "it"):
-                reproduced_property = job_type_section["reproduced"][reproduced_property_name]
-                line += "%s," % reproduced_property
+            if section_name != "original":
+                line += "%s," % job_type_section["reproduced"]
         line = line[0:-1]
         print(line)
 

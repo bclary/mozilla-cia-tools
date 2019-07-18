@@ -562,6 +562,48 @@ $ ./get_pushes_jobs_json.py \
   --job-type-name test-windows10-64/debug-xpcshell-e10s-2 --add-bugzilla-suggestions | ./summarize_isolation_pushes_jobs_json.py
 ```
 
+``` shell
+{
+  "test-windows10-64/debug-xpcshell-e10s-2": {
+    "original": {
+      "run_time": 8178,
+      "jobs_failed": 1,
+      "jobs_total": 5,
+      "tests_failed": 5
+    },
+    "repeated": {
+      "run_time": 163725,
+      "jobs_failed": 6,
+      "jobs_total": 100,
+      "tests_failed": 25,
+      "reproduced": 15
+    },
+    "id": {
+      "run_time": 15116,
+      "jobs_failed": 0,
+      "jobs_total": 100,
+      "tests_failed": 0,
+      "reproduced": 0
+    },
+    "it": {
+      "run_time": 11213,
+      "jobs_failed": 7,
+      "jobs_total": 100,
+      "tests_failed": 35,
+      "reproduced": 35
+    }
+  }
+}
+```
+
+where each section contains
+
+- `run_time` is the sum of `end_timestamp - start_timestamp` for each job.
+- `jobs_failed` is the count of jobs with `result == 'testfailed` for each job.
+- `jobs_total` is the total number of jobs.
+- `tests_failed` is the total number of test failures as determined from the bugzilla_suggestions search terms for the jobs.
+- `reproduced` is the number of the test failuress which reproduced a failure in the original section.
+
 ### duplicate-opt-pgo-tasks.py
 
 Compare opt and pgo tasks and flag duplicates.
