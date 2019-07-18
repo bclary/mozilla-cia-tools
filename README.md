@@ -521,6 +521,47 @@ command line through the use of the @ syntax.
 Each argument and its value must be on separate lines in the file.
 ```
 
+### summarize_isolation_pushes_jobs_json.py
+
+Summarize job json for Test Isolation
+
+``` shell
+$ ./summarize_isolation_pushes_jobs_json.py --help
+usage: summarize_isolation_pushes_jobs_json.py [-h]
+                                               [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
+                                               [--file FILE] [--raw] [--csv]
+                                               [--include-failures]
+
+Reads json produced by get_pushes_jobs_json.py either from stdin
+or from a file and produces a summary of runtimes and test failures, writing
+results as either csv text or json to stdout. By default, output is written
+as formatted json.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
+                        Logging level. (default: INFO)
+  --file FILE           Load the file produced previously by get_pushes_jobs_json. Leave empty or use - to specify stdin. (default: None)
+  --raw                 Do not reformat/indent json. (default: False)
+  --csv                 Output in csv format. Not compatible with --include-failures. (default: False)
+  --include-failures    Include individual failures in output. (default: False)
+
+You can save a set of arguments to a file and specify them later using
+the @argfile syntax. The arguments contained in the file will replace
+@argfile in the command line. Multiple files can be loaded into the
+command line through the use of the @ syntax.
+
+Each argument and its value must be on separate lines in the file.
+```
+
+#### Example
+
+``` shell
+$ ./get_pushes_jobs_json.py \
+  --revision-url 'https://hg.mozilla.org/integration/autoland/rev/948869e38bce72ae635e1ab629ab42ce0af444cc' \
+  --job-type-name test-windows10-64/debug-xpcshell-e10s-2 --add-bugzilla-suggestions | ./summarize_isolation_pushes_jobs_json.py
+```
+
 ### duplicate-opt-pgo-tasks.py
 
 Compare opt and pgo tasks and flag duplicates.
