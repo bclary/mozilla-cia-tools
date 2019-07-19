@@ -39,6 +39,11 @@ def summarize_isolation_pushes_jobs_json(args):
             if match:
                 failure = failure.replace(match.group(1), '...')
         return failure
+    def get_test(failure):
+        try:
+            return failure.split(' | ')[1]
+        except IndexError:
+            return failure
 
     data = load_isolation_push_jobs_json(args)
     summary = {
@@ -57,6 +62,7 @@ def summarize_isolation_pushes_jobs_json(args):
             if section_name not in job_type_summary:
                 job_type_summary[section_name] = job_type_section_summary = {}
                 job_type_section_summary['failures'] = {}
+                job_type_section_summary['tests'] = {}
             section = job_type[section_name]
             run_time = 0
             number_jobs_testfailed = 0
@@ -72,22 +78,36 @@ def summarize_isolation_pushes_jobs_json(args):
                             'count': 0,
                         }
                         if section_name != 'original':
-                            job_type_section_summary['failures'][failure]['reproduced'] = 0
+                            job_type_section_summary['failures'][failure]['failure_reproduced'] = 0
                     job_type_section_summary['failures'][failure]['count'] += 1
+            for failure in job_type_section_summary['failures']:
+                test = get_test(failure)
+                if test not in job_type_section_summary['tests']:
+                    job_type_section_summary['tests'][test] = {
+                        'count': job_type_section_summary['failures'][failure]['count'],
+                    }
+                    if section_name != 'original':
+                        job_type_section_summary['tests'][test]['test_reproduced'] = job_type_section_summary['failures'][failure]['failure_reproduced']
             job_type_section_summary['run_time'] = run_time
             job_type_section_summary['jobs_failed'] = number_jobs_testfailed
             job_type_section_summary['jobs_total'] = len(section)
             job_type_section_summary['tests_failed'] = number_failures
             if section_name != 'original':
-                job_type_section_summary['reproduced'] = 0
+                job_type_section_summary['failure_reproduced'] = 0
+                job_type_section_summary['test_reproduced'] = 0
         job_type_original_summary = job_type_summary['original']
         for section_name in ("repeated", "id", "it"):
             job_type_section_summary = job_type_summary[section_name]
             for failure in job_type_section_summary['failures']:
                 if failure in job_type_original_summary['failures']:
                     count = job_type_section_summary['failures'][failure]['count']
-                    job_type_section_summary['failures'][failure]['reproduced'] += count
-                    job_type_section_summary['reproduced'] += count
+                    job_type_section_summary['failures'][failure]['failure_reproduced'] += count
+                    job_type_section_summary['failure_reproduced'] += count
+            for test in job_type_section_summary['tests']:
+                if test in job_type_original_summary['tests']:
+                    count = job_type_section_summary['tests'][test]['count']
+                    job_type_section_summary['tests'][test]['test_reproduced'] += count
+                    job_type_section_summary['test_reproduced'] += count
     if not args.include_failures:
         # Remove failures lists from sections
         for job_type_name in summary:
@@ -97,6 +117,19 @@ def summarize_isolation_pushes_jobs_json(args):
                 summary_section = summary[job_type_name][section_name]
                 if 'failures' in summary_section:
                     del summary_section['failures']
+                if 'failure_reproduced' in summary_section:
+                    del summary_section['failure_reproduced']
+    if not args.include_tests:
+        # Remove tests lists from sections
+        for job_type_name in summary:
+            if job_type_name == "revision":
+                continue
+            for section_name in summary[job_type_name]:
+                summary_section = summary[job_type_name][section_name]
+                if 'tests' in summary_section:
+                    del summary_section['tests']
+                if 'test_reproduced' in summary_section:
+                    del summary_section['test_reproduced']
 
     return summary
 
@@ -167,13 +200,16 @@ def load_isolation_push_jobs_json(args):
     return data
 
 
-def output_csv(summary):
+def output_csv(args, summary):
     line = "revision,job_type_name,"
-    for section_name in ("original", "repeated", "id", "it"):
-        for property_name in ("run_time", "jobs_failed", "jobs_total", "tests_failed"):
+    for section_name in ("repeated", "id", "it"):
+        for property_name in ("run_time", ):
             line += "%s.%s," % (section_name, property_name)
         if section_name != "original":
-            line += "%s.reproduced," % section_name
+            if args.include_failures:
+                line += "%s.failure_reproduced," % section_name
+            if args.include_tests:
+                line += "%s.test_reproduced," % section_name
     line = line[0:-1]
     print(line)
     for job_type_name in summary:
@@ -181,12 +217,15 @@ def output_csv(summary):
             continue
         line = "%s,%s," % (summary['revision'], job_type_name)
         job_type_summary = summary[job_type_name]
-        for section_name in ("original", "repeated", "id", "it"):
+        for section_name in ("repeated", "id", "it"):
             job_type_section = job_type_summary[section_name]
-            for property_name in ("run_time", "jobs_failed", "jobs_total", "tests_failed"):
+            for property_name in ("run_time", ):
                 line += "%s," % job_type_section[property_name]
             if section_name != "original":
-                line += "%s," % job_type_section["reproduced"]
+                if args.include_failures:
+                    line += "%s," % job_type_section["failure_reproduced"]
+                if args.include_tests:
+                    line += "%s," % job_type_section["test_reproduced"]
         line = line[0:-1]
         print(line)
 
@@ -243,7 +282,7 @@ Each argument and its value must be on separate lines in the file.
         "--csv",
         action='store_true',
         default=False,
-        help="Output in csv format. Not compatible with --include-failures.")
+        help="Output in csv format. Does not include individual failures or tests.")
 
     parser.add_argument(
         "--include-failures",
@@ -251,12 +290,15 @@ Each argument and its value must be on separate lines in the file.
         default=False,
         help="Include individual failures in output.")
 
+    parser.add_argument(
+        "--include-tests",
+        action='store_true',
+        default=False,
+        help="Include individual tests in output.")
+
     parser.set_defaults(func=summarize_isolation_pushes_jobs_json)
 
     args = parser.parse_args()
-
-    if args.csv and args.include_failures:
-        parser.error("Can not specify both --csv and --include-failures.")
 
     logging.basicConfig(level=getattr(logging, args.log_level))
     logger = logging.getLogger()
@@ -269,7 +311,7 @@ Each argument and its value must be on separate lines in the file.
     if args.raw:
         print(summary)
     elif args.csv:
-        output_csv(summary)
+        output_csv(args, summary)
     else:
         print(json.dumps(summary, indent=2))
 

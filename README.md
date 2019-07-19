@@ -311,10 +311,11 @@ Each argument and its value must be on separate lines in the file.
 
 usage: get_pushes_jobs_job_details_json.py [-h]
                                            [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
-                                           [--repo {mozilla-central,autoland,inbound,try,mozilla-beta,mozilla-release}]
+                                           [--repo {mozilla-central,autoland,mozilla-inbound,try,mozilla-beta,mozilla-release,mozilla-esr68}]
                                            [--author AUTHOR]
                                            [--date-range DATE_RANGE | --revision REVISION | --commit-revision COMMIT_REVISION | --revision-url REVISION_URL | --revision-range REVISION_RANGE]
                                            [--add-bugzilla-suggestions]
+                                           [--test-failure-pattern TEST_FAILURE_PATTERN]
                                            [--build-platform BUILD_PLATFORM]
                                            [--job-group-name JOB_GROUP_NAME]
                                            [--job-group-symbol JOB_GROUP_SYMBOL]
@@ -344,7 +345,7 @@ optional arguments:
   -h, --help            show this help message and exit
   --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
                         Logging level. (default: INFO)
-  --repo {mozilla-central,autoland,inbound,try,mozilla-beta,mozilla-release}
+  --repo {mozilla-central,autoland,mozilla-inbound,try,mozilla-beta,mozilla-release,mozilla-esr68}
                         repository name to query. (default: mozilla-central)
   --author AUTHOR       Push author email. Should be specified if --repo is try and more
                         than one revision is selected. (default: None)
@@ -359,6 +360,8 @@ optional arguments:
                         Push revision range fromchange-tochange. (default: None)
   --add-bugzilla-suggestions
                         Add bugzilla suggestions to job objects. (default: False)
+  --test-failure-pattern TEST_FAILURE_PATTERN
+                        Include failures from bugzilla suggestions matching this regular expression. (default: None)
   --build-platform BUILD_PLATFORM
                         Match job build platform regular expression. (default: None)
   --job-group-name JOB_GROUP_NAME
@@ -445,10 +448,11 @@ Each argument and its value must be on separate lines in the file.
 
 usage: get_pushes_jobs_json.py [-h]
                                [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
-                               [--repo {mozilla-central,autoland,inbound,try,mozilla-beta,mozilla-release}]
+                               [--repo {mozilla-central,autoland,mozilla-inbound,try,mozilla-beta,mozilla-release,mozilla-esr68}]
                                [--author AUTHOR]
                                [--date-range DATE_RANGE | --revision REVISION | --commit-revision COMMIT_REVISION | --revision-url REVISION_URL | --revision-range REVISION_RANGE]
                                [--add-bugzilla-suggestions]
+                               [--test-failure-pattern TEST_FAILURE_PATTERN]
                                [--build-platform BUILD_PLATFORM]
                                [--job-group-name JOB_GROUP_NAME]
                                [--job-group-symbol JOB_GROUP_SYMBOL]
@@ -476,7 +480,7 @@ optional arguments:
   -h, --help            show this help message and exit
   --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
                         Logging level. (default: INFO)
-  --repo {mozilla-central,autoland,inbound,try,mozilla-beta,mozilla-release}
+  --repo {mozilla-central,autoland,mozilla-inbound,try,mozilla-beta,mozilla-release,mozilla-esr68}
                         repository name to query. (default: mozilla-central)
   --author AUTHOR       Push author email. Should be specified if --repo is try and more
                         than one revision is selected. (default: None)
@@ -491,6 +495,8 @@ optional arguments:
                         Push revision range fromchange-tochange. (default: None)
   --add-bugzilla-suggestions
                         Add bugzilla suggestions to job objects. (default: False)
+  --test-failure-pattern TEST_FAILURE_PATTERN
+                        Include failures from bugzilla suggestions matching this regular expression. (default: None)
   --build-platform BUILD_PLATFORM
                         Match job build platform regular expression. (default: None)
   --job-group-name JOB_GROUP_NAME
@@ -519,6 +525,7 @@ the @argfile syntax. The arguments contained in the file will replace
 command line through the use of the @ syntax.
 
 Each argument and its value must be on separate lines in the file.
+
 ```
 
 ### summarize_isolation_pushes_jobs_json.py
@@ -529,8 +536,10 @@ Summarize job json for Test Isolation
 $ ./summarize_isolation_pushes_jobs_json.py --help
 usage: summarize_isolation_pushes_jobs_json.py [-h]
                                                [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
+                                               [--treeherder TREEHERDER]
                                                [--file FILE] [--raw] [--csv]
                                                [--include-failures]
+                                               [--include-tests]
 
 Reads json produced by get_pushes_jobs_json.py either from stdin
 or from a file and produces a summary of runtimes and test failures, writing
@@ -541,10 +550,13 @@ optional arguments:
   -h, --help            show this help message and exit
   --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
                         Logging level. (default: INFO)
+  --treeherder TREEHERDER
+                        Treeherder url. (default: https://treeherder.mozilla.org)
   --file FILE           Load the file produced previously by get_pushes_jobs_json. Leave empty or use - to specify stdin. (default: None)
   --raw                 Do not reformat/indent json. (default: False)
-  --csv                 Output in csv format. Not compatible with --include-failures. (default: False)
+  --csv                 Output in csv format. Does not include individual failures or tests. (default: False)
   --include-failures    Include individual failures in output. (default: False)
+  --include-tests       Include individual tests in output. (default: False)
 
 You can save a set of arguments to a file and specify them later using
 the @argfile syntax. The arguments contained in the file will replace
@@ -559,7 +571,8 @@ Each argument and its value must be on separate lines in the file.
 ``` shell
 $ ./get_pushes_jobs_json.py \
   --revision-url 'https://hg.mozilla.org/integration/autoland/rev/948869e38bce72ae635e1ab629ab42ce0af444cc' \
-  --job-type-name test-windows10-64/debug-xpcshell-e10s-2 --add-bugzilla-suggestions | ./summarize_isolation_pushes_jobs_json.py
+  --job-type-name test-windows10-64/debug-xpcshell-e10s-2 --add-bugzilla-suggestions --test-failure-pattern '(TEST|PROCESS)' | \
+  ./summarize_isolation_pushes_jobs_json.py --include-tests
 ```
 
 ``` shell
