@@ -31,6 +31,11 @@ returned. All specified patterns must match to return a job.
         help="Add bugzilla suggestions to job objects.")
 
     parser.add_argument(
+        "--test-failure-pattern",
+        default=None,
+        help="Include failures from bugzilla suggestions matching this regular expression.")
+
+    parser.add_argument(
         "--build-platform",
         default=None,
         help="Match job build platform regular expression.")
@@ -115,4 +120,7 @@ def compile_filters(args):
         filter_value = getattr(args, filter_name)
         if filter_value:
             args.filters[filter_name] = re.compile(filter_value)
+
+    if args.test_failure_pattern:
+        args.test_failure_pattern = re.compile(args.test_failure_pattern)
 

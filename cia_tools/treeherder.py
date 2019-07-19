@@ -65,7 +65,13 @@ def get_pushes_jobs_json(args):
                     continue
                 bugzilla_suggestions_url = '%s/api/project/%s/jobs/%s/bug_suggestions/' % (
                     (args.treeherder, args.repo, job['id']))
-                job['bugzilla_suggestions'] = utils.get_remote_json(bugzilla_suggestions_url)
+                suggestions = utils.get_remote_json(bugzilla_suggestions_url)
+                if args.test_failure_pattern:
+                    job['bugzilla_suggestions'] = [
+                        suggestion for suggestion in suggestions
+                        if args.test_failure_pattern.search(suggestion['search'])]
+                else:
+                    job['bugzilla_suggestions'] = suggestions
     return pushes
 
 
