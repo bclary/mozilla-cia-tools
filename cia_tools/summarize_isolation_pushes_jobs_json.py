@@ -3,17 +3,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-"""
-module docstring
-"""
-
 import argparse
 import json
 import logging
 import re
 import sys
 
-from common_args import ArgumentFormatter, log_level_args
+from common_args import ArgumentFormatter, log_level_args, treeherder_urls_args
+from treeherder import get_repositories, get_repository_by_id
 
 
 re_job_group_symbol = re.compile(r'-I$')
@@ -43,12 +40,16 @@ def summarize_isolation_pushes_jobs_json(args):
                 failure = failure.replace(match.group(1), '...')
         return failure
 
-    summary = {}
     data = load_isolation_push_jobs_json(args)
+    summary = {
+        "revision": data["revision"]
+    }
 
     job_type_names = sorted(data.keys())
 
     for job_type_name in job_type_names:
+        if job_type_name == "revision":
+            continue
         if job_type_name not in summary:
             summary[job_type_name] = job_type_summary = {}
         job_type = data[job_type_name]
@@ -90,6 +91,8 @@ def summarize_isolation_pushes_jobs_json(args):
     if not args.include_failures:
         # Remove failures lists from sections
         for job_type_name in summary:
+            if job_type_name == "revision":
+                continue
             for section_name in summary[job_type_name]:
                 summary_section = summary[job_type_name][section_name]
                 if 'failures' in summary_section:
@@ -103,6 +106,7 @@ def load_isolation_push_jobs_json(args):
     in a dict according to.
 
     data = {
+        "revision": "...",
         "<job-type-name>": {
             "original": [],
             "repeated": [],
@@ -112,13 +116,18 @@ def load_isolation_push_jobs_json(args):
         ...
     }
     """
-    data = {}
-
     if args.file is None or args.file == '-':
         push = json.loads(sys.stdin.read())[0]
     else:
         with open(args.file) as input:
                 push = json.loads(input.read())[0]
+
+    repository = get_repository_by_id(push['revisions'][0]['repository_id'])
+    revision = push['revisions'][0]['revision']
+    revision_url = "%s/rev/%s" % (repository["url"], revision)
+    data = {
+        "revision": revision_url,
+    }
 
     # Find the job_type_names associated with test isolation jobs
     for job in push['jobs']:
@@ -154,11 +163,12 @@ def load_isolation_push_jobs_json(args):
         else:
             pass # Ignore non test isolation related jobs
 
+
     return data
 
 
 def output_csv(summary):
-    line = "job_type_name,"
+    line = "revision,job_type_name,"
     for section_name in ("original", "repeated", "id", "it"):
         for property_name in ("run_time", "jobs_failed", "jobs_total", "tests_failed"):
             line += "%s.%s," % (section_name, property_name)
@@ -167,7 +177,9 @@ def output_csv(summary):
     line = line[0:-1]
     print(line)
     for job_type_name in summary:
-        line = "%s," % job_type_name
+        if job_type_name == "revision":
+            continue
+        line = "%s,%s," % (summary['revision'], job_type_name)
         job_type_summary = summary[job_type_name]
         for section_name in ("original", "repeated", "id", "it"):
             job_type_section = job_type_summary[section_name]
@@ -182,7 +194,7 @@ def output_csv(summary):
 def main():
     """main"""
 
-    parent_parsers = [log_level_args.get_parser()]
+    parent_parsers = [log_level_args.get_parser(), treeherder_urls_args.get_parser()]
 
     additional_descriptions = [parser.description for parser in parent_parsers
                                if parser.description]
@@ -249,6 +261,8 @@ Each argument and its value must be on separate lines in the file.
     logging.basicConfig(level=getattr(logging, args.log_level))
     logger = logging.getLogger()
     logger.debug("main %s", args)
+
+    get_repositories(args)
 
     summary = args.func(args)
 

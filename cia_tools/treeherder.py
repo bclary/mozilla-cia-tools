@@ -3,10 +3,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-"""
-module docstring
-"""
-
 import logging
 import time
 
@@ -17,6 +13,7 @@ import utils
 
 
 CLIENT = None
+REPOSITORIES = None
 
 def get_client(args):
     global CLIENT
@@ -107,3 +104,18 @@ def get_pushes_jobs_job_details_json(args):
                 continue
 
     return pushes
+
+
+def get_repositories(args):
+    global REPOSITORIES
+
+    if REPOSITORIES is None:
+        client = get_client(args)
+        REPOSITORIES = {}
+        repositories = client.get_repositories()
+        for repository in repositories:
+            REPOSITORIES[repository['id']] = repository
+
+
+def get_repository_by_id(id):
+    return REPOSITORIES[id]
