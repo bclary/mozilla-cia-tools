@@ -58,6 +58,7 @@ def summarize_isolation_pushes_jobs_json(args):
         if job_type_name not in summary:
             summary[job_type_name] = job_type_summary = {}
         job_type = data[job_type_name]
+
         for section_name in ("original", "repeated", "id", "it"):
             if section_name not in job_type_summary:
                 job_type_summary[section_name] = job_type_section_summary = {}
@@ -69,12 +70,14 @@ def summarize_isolation_pushes_jobs_json(args):
             run_time = 0
             number_jobs_testfailed = 0
             number_failures = 0
+
             for job in section:
                 if section_name == 'original':
                     job_type_section_summary['job_bug_map'].extend(job['job_bug_map'])
                 run_time += job['end_timestamp'] - job['start_timestamp']
                 number_jobs_testfailed += 1 if job['result'] == 'testfailed' else 0
                 number_failures += len(job['bugzilla_suggestions'])
+
                 for bugzilla_suggestion in job['bugzilla_suggestions']:
                     failure = munge_failure(bugzilla_suggestion['search'])
                     if failure not in job_type_section_summary['failures']:
@@ -84,6 +87,7 @@ def summarize_isolation_pushes_jobs_json(args):
                         if section_name != 'original':
                             job_type_section_summary['failures'][failure]['failure_reproduced'] = 0
                     job_type_section_summary['failures'][failure]['count'] += 1
+
             for failure in job_type_section_summary['failures']:
                 test = get_test(failure)
                 if test not in job_type_section_summary['tests']:
@@ -99,43 +103,51 @@ def summarize_isolation_pushes_jobs_json(args):
             if section_name != 'original':
                 job_type_section_summary['failure_reproduced'] = 0
                 job_type_section_summary['test_reproduced'] = 0
+
         job_type_original_summary = job_type_summary['original']
+
         for section_name in ("repeated", "id", "it"):
             job_type_section_summary = job_type_summary[section_name]
+
             for failure in job_type_section_summary['failures']:
                 if failure in job_type_original_summary['failures']:
                     count = job_type_section_summary['failures'][failure]['count']
                     job_type_section_summary['failures'][failure]['failure_reproduced'] += count
                     job_type_section_summary['failure_reproduced'] += count
+
             for test in job_type_section_summary['tests']:
                 if test in job_type_original_summary['tests']:
                     count = job_type_section_summary['tests'][test]['count']
                     job_type_section_summary['tests'][test]['test_reproduced'] += count
                     job_type_section_summary['test_reproduced'] += count
+
     if not args.include_failures:
         # Remove failures lists from sections
         for job_type_name in summary:
             if job_type_name == "revision":
                 continue
+
             for section_name in summary[job_type_name]:
                 summary_section = summary[job_type_name][section_name]
                 if 'failures' in summary_section:
                     del summary_section['failures']
                 if 'failure_reproduced' in summary_section:
                     del summary_section['failure_reproduced']
+
     if not args.include_tests:
         # Remove tests lists from sections
         for job_type_name in summary:
             if job_type_name == "revision":
                 continue
+
             for section_name in summary[job_type_name]:
                 summary_section = summary[job_type_name][section_name]
                 if 'tests' in summary_section:
                     del summary_section['tests']
                 if 'test_reproduced' in summary_section:
                     del summary_section['test_reproduced']
-
     return summary
+
 
 def load_isolation_push_jobs_json(args):
     """Load job data from the specified file, collecting the jobs which are
@@ -212,6 +224,7 @@ def load_isolation_push_jobs_json(args):
 def output_csv(args, summary):
     re_job_type_name = re.compile(r'test-([^/]+)/([^-]+)-(.*)')
     line = "revision,job_type_name,platform,buildtype,test,bugs,"
+
     for section_name in ("repeated", "id", "it"):
         for property_name in ("run_time", ):
             line += "%s.%s," % (section_name, property_name)
@@ -222,9 +235,11 @@ def output_csv(args, summary):
                 line += "%s.test_reproduced," % section_name
     line = line[0:-1]
     print(line)
+
     for job_type_name in summary:
         if job_type_name == "revision":
             continue
+
         match = re_job_type_name.match(job_type_name)
         if not match:
             raise Exception('job_type_name %s does not match pattern' % job_type_name)
@@ -234,6 +249,7 @@ def output_csv(args, summary):
         job_bug_map = summary[job_type_name]['original']['job_bug_map']
         bugs = ' '.join(sorted(set([ str(job_bug['bug_id']) for job_bug in job_bug_map ])))
         line += "%s," % bugs
+
         for section_name in ("repeated", "id", "it"):
             job_type_section = job_type_summary[section_name]
             for property_name in ("run_time", ):
