@@ -41,12 +41,13 @@ def get_treeherder_push_params(args):
     return params
 
 
-def get_remote_text(url):
+def get_remote_text(url, params=None):
     """Return the string containing the contents of a url if the
     request is successful, otherwise return None. Works with remote
     and local files.
 
     :param url: url of content to be retrieved.
+    :param: params: dict of query terms.
     """
     logger = logging.getLogger()
 
@@ -59,7 +60,7 @@ def get_remote_text(url):
 
         while True:
             try:
-                req = requests.get(url, headers={'user-agent': USER_AGENT})
+                req = requests.get(url, params=params, headers={'user-agent': USER_AGENT})
                 if req.ok:
                     return req.text
                 if req.status_code != 503:
@@ -80,14 +81,15 @@ def get_remote_text(url):
     return None
 
 
-def get_remote_json(url):
+def get_remote_json(url, params=None):
     """Return the json representation of the contents of a remote url if
     the HTTP response code is 200, otherwise return None.
 
     :param url: url of content to be retrieved.
+    :param: params: dict of query terms.
     """
     logger = logging.getLogger()
-    content = get_remote_text(url)
+    content = get_remote_text(url, params=params)
     if content:
         content = json.loads(content)
     logger.debug('get_remote_json(%s): %s', url, content)
@@ -96,11 +98,12 @@ def get_remote_json(url):
 
 # download_file() cloned from autophone's urlretrieve()
 
-def download_file(url, dest, max_attempts=3):
+def download_file(url, dest, params=None, max_attempts=3):
     """Download file from url and save to dest.
 
     :param: url: string url to file to download.
                  Can be either http, https or file scheme.
+    :param: params: dict of query terms.
     :param dest: string path where to save file.
     :max_attempts: integer number of times to attempt download.
                    Defaults to 3.
