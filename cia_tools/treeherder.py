@@ -112,6 +112,44 @@ def get_pushes_jobs_job_details_json(args):
     return pushes
 
 
+def get_job_by_repo_job_id_json(args, repo, job_id):
+    """get_job_by_repo_job_id_json
+
+    Retrieve job given args, repo and job_id
+
+    """
+    client = get_client(args)
+    jobs = client.get_jobs(repo, id=job_id)
+
+    return jobs[0]
+
+
+def get_bug_job_map_json(args, repo, job_id):
+    """get_job_by_repo_job_id_json
+
+    Retrieve job given args, repo and job_id
+
+    """
+    logger = logging.getLogger()
+    bug_job_map_url = '%s/api/project/%s/bug-job-map/?job_id=%s' % (
+        (args.treeherder, repo, job_id))
+
+    # Attempt up to 3 times to work around connection failures.
+    for attempt in range(3):
+        try:
+            bug_job_map = utils.get_remote_json(bug_job_map_url)
+            break
+        except requests.exceptions.ConnectionError:
+            logger.exception('get_bug_job_map_json attempt %s', attempt)
+            if attempt != 2:
+                time.sleep(30)
+    if attempt == 2:
+        logger.warning("Unable to get job_bug_map %s", bug_job_map_url)
+        bug_job_map = None
+
+    return bug_job_map
+
+
 def get_repositories(args):
     global REPOSITORIES
 
