@@ -10,7 +10,7 @@ import re
 import sys
 
 from common_args import ArgumentFormatter, log_level_args, treeherder_urls_args
-from treeherder import get_repositories, get_repository_by_id
+from treeherder import get_repositories, get_repository_by_id, get_bug_job_map_json
 
 
 re_job_group_symbol = re.compile(r'-I$')
@@ -21,7 +21,7 @@ def is_isolation_job_group_symbol(job_group_symbol):
     return re_job_group_symbol.search(job_group_symbol)
 
 
-def isolation_job_type(job_type_symbol):
+def is_isolation_job_type_symbol(job_type_symbol):
     match = re_job_type_symbol.search(job_type_symbol)
     if match:
         return match.group(1)
@@ -63,11 +63,15 @@ def summarize_isolation_pushes_jobs_json(args):
                 job_type_summary[section_name] = job_type_section_summary = {}
                 job_type_section_summary['failures'] = {}
                 job_type_section_summary['tests'] = {}
+                if section_name == 'original':
+                    job_type_section_summary['job_bug_map'] = []
             section = job_type[section_name]
             run_time = 0
             number_jobs_testfailed = 0
             number_failures = 0
             for job in section:
+                if section_name == 'original':
+                    job_type_section_summary['job_bug_map'].extend(job['job_bug_map'])
                 run_time += job['end_timestamp'] - job['start_timestamp']
                 number_jobs_testfailed += 1 if job['result'] == 'testfailed' else 0
                 number_failures += len(job['bugzilla_suggestions'])
@@ -165,8 +169,10 @@ def load_isolation_push_jobs_json(args):
     # Find the job_type_names associated with test isolation jobs
     for job in push['jobs']:
         job_type_symbol = job['job_type_symbol']
-        isolation_type = isolation_job_type(job_type_symbol)
-        if isolation_type:
+        job_group_symbol = job['job_group_symbol']
+        isolation_group = is_isolation_job_group_symbol(job_group_symbol)
+        isolation_type = is_isolation_job_type_symbol(job_type_symbol)
+        if isolation_group or isolation_type:
             job_type_name = job['job_type_name']
             if job_type_name not in data:
                 data[job_type_name] = {
@@ -183,25 +189,29 @@ def load_isolation_push_jobs_json(args):
             continue
         data_job_type = data[job_type_name]
         job_type_symbol = job['job_type_symbol']
-        isolation_type = isolation_job_type(job_type_symbol)
-        if isolation_type is None:
-            if is_isolation_job_group_symbol(job['job_group_symbol']):
-                data_job_type['repeated'].append(job)
-            else:
-                data_job_type['original'].append(job)
+        job_group_symbol = job['job_group_symbol']
+        isolation_type = is_isolation_job_type_symbol(job_type_symbol)
+        isolation_group = is_isolation_job_group_symbol(job_group_symbol)
+        if isolation_type is None and isolation_group is None:
+            data_job_type['original'].append(job)
+            # Add the job_bug_map object to the original job
+            # in order to track which bug was "isolated".
+            job['job_bug_map'] = get_bug_job_map_json(args, repository['name'], job['id'])
         elif isolation_type == 'id':
             data_job_type['id'].append(job)
         elif isolation_type == 'it':
             data_job_type['it'].append(job)
+        elif isolation_group:
+            data_job_type['repeated'].append(job)
         else:
-            pass # Ignore non test isolation related jobs
-
+            pass
 
     return data
 
 
 def output_csv(args, summary):
-    line = "revision,job_type_name,"
+    re_job_type_name = re.compile(r'test-([^/]+)/([^-]+)-(.*)')
+    line = "revision,job_type_name,platform,buildtype,test,bugs,"
     for section_name in ("repeated", "id", "it"):
         for property_name in ("run_time", ):
             line += "%s.%s," % (section_name, property_name)
@@ -215,8 +225,15 @@ def output_csv(args, summary):
     for job_type_name in summary:
         if job_type_name == "revision":
             continue
-        line = "%s,%s," % (summary['revision'], job_type_name)
+        match = re_job_type_name.match(job_type_name)
+        if not match:
+            raise Exception('job_type_name %s does not match pattern' % job_type_name)
+        (platform, buildtype, test) = match.groups()
+        line = "%s,%s,%s,%s,%s," % (summary['revision'], job_type_name, platform, buildtype, test)
         job_type_summary = summary[job_type_name]
+        job_bug_map = summary[job_type_name]['original']['job_bug_map']
+        bugs = ' '.join(sorted(set([ str(job_bug['bug_id']) for job_bug in job_bug_map ])))
+        line += "%s," % bugs
         for section_name in ("repeated", "id", "it"):
             job_type_section = job_type_summary[section_name]
             for property_name in ("run_time", ):
