@@ -221,18 +221,19 @@ def load_isolation_push_jobs_json(args):
     return data
 
 
-def output_csv(args, summary):
-    re_job_type_name = re.compile(r'test-([^/]+)/([^-]+)-(.*)')
-    line = "revision,job_type_name,platform,buildtype,test,bugs,"
+def output_csv_summary(args, summary):
+    line = "revision;job_type_name;bugs;"
+
+    properties = ("run_time", "jobs_total", "jobs_failed", "tests_failed")
 
     for section_name in ("repeated", "id", "it"):
-        for property_name in ("run_time", ):
-            line += "%s.%s," % (section_name, property_name)
-        if section_name != "original":
-            if args.include_failures:
-                line += "%s.failure_reproduced," % section_name
-            if args.include_tests:
-                line += "%s.test_reproduced," % section_name
+        for property_name in properties:
+            line += "%s.%s;" % (section_name, property_name)
+        if args.include_failures:
+            line += "%s.failure_reproduced;" % section_name
+        if args.include_tests:
+            line += "%s.test_reproduced;" % section_name
+
     line = line[0:-1]
     print(line)
 
@@ -240,27 +241,58 @@ def output_csv(args, summary):
         if job_type_name == "revision":
             continue
 
-        match = re_job_type_name.match(job_type_name)
-        if not match:
-            raise Exception('job_type_name %s does not match pattern' % job_type_name)
-        (platform, buildtype, test) = match.groups()
-        line = "%s,%s,%s,%s,%s," % (summary['revision'], job_type_name, platform, buildtype, test)
+        line = "%s;%s;" % (summary['revision'], job_type_name)
         job_type_summary = summary[job_type_name]
         job_bug_map = summary[job_type_name]['original']['job_bug_map']
         bugs = ' '.join(sorted(set([ str(job_bug['bug_id']) for job_bug in job_bug_map ])))
-        line += "%s," % bugs
+        line += "%s;" % bugs
 
         for section_name in ("repeated", "id", "it"):
             job_type_section = job_type_summary[section_name]
-            for property_name in ("run_time", ):
-                line += "%s," % job_type_section[property_name]
+            for property_name in properties:
+                line += "%s;" % job_type_section[property_name]
             if section_name != "original":
                 if args.include_failures:
-                    line += "%s," % job_type_section["failure_reproduced"]
+                    line += "%s;" % job_type_section["failure_reproduced"]
                 if args.include_tests:
-                    line += "%s," % job_type_section["test_reproduced"]
+                    line += "%s;" % job_type_section["test_reproduced"]
         line = line[0:-1]
         print(line)
+
+
+def output_csv_results(args, summary):
+    print("revision;job_type_name;section;result_type;result_name;count;reproduced")
+
+    for job_type_name in summary:
+        if job_type_name == "revision":
+            continue
+
+        job_type_summary = summary[job_type_name]
+
+        for section_name in ("repeated", "id", "it"):
+            job_type_section = job_type_summary[section_name]
+            if args.include_failures:
+                for failure_message in job_type_section["failures"]:
+                    failure = job_type_section["failures"][failure_message]
+                    print("%s;%s;%s;%s;%s;%s;%s" % (
+                        summary['revision'],
+                        job_type_name,
+                        section_name,
+                        "failure",
+                        failure_message,
+                        failure["count"],
+                        failure["failure_reproduced"]))
+            if args.include_tests:
+                for test_name in job_type_section["tests"]:
+                    test = job_type_section["tests"][test_name]
+                    print("%s;%s;%s;%s;%s;%s;%s" % (
+                        summary['revision'],
+                        job_type_name,
+                        section_name,
+                        "test",
+                        test_name,
+                        test["count"],
+                        test["test_reproduced"]))
 
 
 def main():
@@ -312,10 +344,16 @@ Each argument and its value must be on separate lines in the file.
         help="Do not reformat/indent json.")
 
     parser.add_argument(
-        "--csv",
+        "--csv-summary",
         action='store_true',
         default=False,
-        help="Output in csv format. Does not include individual failures or tests.")
+        help="Output summary data in csv format. Does not include individual failures or tests.")
+
+    parser.add_argument(
+        "--csv-results",
+        action='store_true',
+        default=False,
+        help="Output test data in csv format. Does not include individual failures.")
 
     parser.add_argument(
         "--include-failures",
@@ -343,8 +381,10 @@ Each argument and its value must be on separate lines in the file.
 
     if args.raw:
         print(summary)
-    elif args.csv:
-        output_csv(args, summary)
+    elif args.csv_summary:
+        output_csv_summary(args, summary)
+    elif args.csv_results:
+        output_csv_results(args, summary)
     else:
         print(json.dumps(summary, indent=2))
 
