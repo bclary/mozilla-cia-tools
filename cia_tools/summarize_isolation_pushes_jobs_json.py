@@ -171,6 +171,27 @@ def load_isolation_push_jobs_json(args):
         with open(args.file) as input:
                 push = json.loads(input.read())[0]
 
+    data = convert_push_to_isolation_data(args, push)
+    return data
+
+
+def convert_push_to_isolation_data(args, push):
+    """Take the push/job data, collecting the jobs which are related to
+    test isolation (group symbol suffix -I) and organizing them in a
+    dict according to.
+
+    data = {
+        "revision": "...",
+        "<job-type-name>": {
+            "original": [],
+            "repeated": [],
+            "id": [],
+            "it": [],
+        },
+        ...
+    }
+
+    """
     repository = get_repository_by_id(push['revisions'][0]['repository_id'])
     revision = push['revisions'][0]['revision']
     revision_url = "%s/rev/%s" % (repository["url"], revision)
