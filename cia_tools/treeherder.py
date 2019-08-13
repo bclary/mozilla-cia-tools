@@ -33,7 +33,12 @@ def get_pushes_json(args):
     push_params = utils.get_treeherder_push_params(args)
 
     client = get_client(args)
+    # client.MAX_COUNT is 2000 but for pushes, the maximum is 1000.
+    # We need to fudge this.
+    max_count = client.MAX_COUNT
+    client.MAX_COUNT = 1000
     pushes = client.get_pushes(args.repo, **push_params)
+    client.MAX_COUNT = max_count
     return pushes
 
 

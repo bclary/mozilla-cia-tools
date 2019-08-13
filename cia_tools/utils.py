@@ -38,6 +38,8 @@ def get_treeherder_push_params(args):
     # limit the response if no arguments given.
     if not params:
         params['count'] = 1
+    else:
+        params['count'] = None
     return params
 
 
