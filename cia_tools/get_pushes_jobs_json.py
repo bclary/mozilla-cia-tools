@@ -11,18 +11,20 @@ import argparse
 import json
 import logging
 
-from common_args import (ArgumentFormatter, jobs_args, log_level_args, pushes_args,
-                         treeherder_urls_args)
 from treeherder import get_pushes_jobs_json
+from common_args import (ArgumentFormatter, log_level_args,
+                         treeherder_urls_args, pushes_args, jobs_args)
 
 
 def main():
     """main"""
 
-    parent_parsers = [log_level_args.get_parser(),
-                      pushes_args.get_parser(),
-                      jobs_args.get_parser(),
-                      treeherder_urls_args.get_parser()]
+    parent_parsers = [
+        log_level_args.get_parser(),
+        treeherder_urls_args.get_parser(),
+        pushes_args.get_parser(),
+        jobs_args.get_parser(),
+    ]
 
     additional_descriptions = [parser.description for parser in parent_parsers
                                if parser.description]
