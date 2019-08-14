@@ -45,122 +45,124 @@ def summarize_isolation_pushes_jobs_json(args):
         except IndexError:
             return failure
 
+    summary = {}
+
     data = load_isolation_push_jobs_json(args)
-    summary = {
-        "revision": data["revision"]
-    }
 
-    job_type_names = sorted(data.keys())
+    for revision_url in data:
 
-    for job_type_name in job_type_names:
-        if job_type_name == "revision":
-            continue
-        if job_type_name not in summary:
-            summary[job_type_name] = job_type_summary = {}
-        job_type = data[job_type_name]
+        if revision_url not in summary:
+            summary[revision_url] = {}
+        revision_summary = summary[revision_url]
 
-        for section_name in ("original", "repeated", "id", "it"):
-            if section_name not in job_type_summary:
-                job_type_summary[section_name] = job_type_section_summary = {}
-                job_type_section_summary['failures'] = {}
-                job_type_section_summary['tests'] = {}
-                if section_name == 'original':
-                    job_type_section_summary['job_bug_map'] = []
-            section = job_type[section_name]
-            run_time = 0
-            number_jobs_testfailed = 0
-            number_failures = 0
+        job_type_names = sorted(data[revision_url].keys())
 
-            for job in section:
-                if section_name == 'original':
-                    job_type_section_summary['job_bug_map'].extend(job['job_bug_map'])
-                run_time += job['end_timestamp'] - job['start_timestamp']
-                number_jobs_testfailed += 1 if job['result'] == 'testfailed' else 0
-                number_failures += len(job['bugzilla_suggestions'])
+        for job_type_name in job_type_names:
+            if job_type_name not in revision_summary:
+                revision_summary[job_type_name] = job_type_summary = {}
+            job_type = data[revision_url][job_type_name]
 
-                for bugzilla_suggestion in job['bugzilla_suggestions']:
-                    failure = munge_failure(bugzilla_suggestion['search'])
-                    if failure not in job_type_section_summary['failures']:
-                        job_type_section_summary['failures'][failure] = {
-                            'count': 0,
+            for section_name in ("original", "repeated", "id", "it"):
+                if section_name not in job_type_summary:
+                    job_type_summary[section_name] = job_type_section_summary = {}
+                    job_type_section_summary['failures'] = {}
+                    job_type_section_summary['tests'] = {}
+                    if section_name == 'original':
+                        job_type_section_summary['job_bug_map'] = []
+                section = job_type[section_name]
+                run_time = 0
+                number_jobs_testfailed = 0
+                number_failures = 0
+
+                for job in section:
+                    if section_name == 'original':
+                        job_type_section_summary['job_bug_map'].extend(job['job_bug_map'])
+                    run_time += job['end_timestamp'] - job['start_timestamp']
+                    number_jobs_testfailed += 1 if job['result'] == 'testfailed' else 0
+                    number_failures += len(job['bugzilla_suggestions'])
+
+                    for bugzilla_suggestion in job['bugzilla_suggestions']:
+                        failure = munge_failure(bugzilla_suggestion['search'])
+                        if failure not in job_type_section_summary['failures']:
+                            job_type_section_summary['failures'][failure] = {
+                                'count': 0,
+                            }
+                            if section_name != 'original':
+                                job_type_section_summary['failures'][failure]['failure_reproduced'] = 0
+                        job_type_section_summary['failures'][failure]['count'] += 1
+
+                for failure in job_type_section_summary['failures']:
+                    test = get_test(failure)
+                    if test not in job_type_section_summary['tests']:
+                        job_type_section_summary['tests'][test] = {
+                            'count': job_type_section_summary['failures'][failure]['count'],
                         }
                         if section_name != 'original':
-                            job_type_section_summary['failures'][failure]['failure_reproduced'] = 0
-                    job_type_section_summary['failures'][failure]['count'] += 1
+                            job_type_section_summary['tests'][test]['test_reproduced'] = job_type_section_summary['failures'][failure]['failure_reproduced']
+                job_type_section_summary['run_time'] = run_time
+                job_type_section_summary['jobs_failed'] = number_jobs_testfailed
+                job_type_section_summary['jobs_total'] = len(section)
+                job_type_section_summary['tests_failed'] = number_failures
+                if section_name != 'original':
+                    job_type_section_summary['failure_reproduced'] = 0
+                    job_type_section_summary['test_reproduced'] = 0
 
-            for failure in job_type_section_summary['failures']:
-                test = get_test(failure)
-                if test not in job_type_section_summary['tests']:
-                    job_type_section_summary['tests'][test] = {
-                        'count': job_type_section_summary['failures'][failure]['count'],
-                    }
-                    if section_name != 'original':
-                        job_type_section_summary['tests'][test]['test_reproduced'] = job_type_section_summary['failures'][failure]['failure_reproduced']
-            job_type_section_summary['run_time'] = run_time
-            job_type_section_summary['jobs_failed'] = number_jobs_testfailed
-            job_type_section_summary['jobs_total'] = len(section)
-            job_type_section_summary['tests_failed'] = number_failures
-            if section_name != 'original':
-                job_type_section_summary['failure_reproduced'] = 0
-                job_type_section_summary['test_reproduced'] = 0
+            job_type_original_summary = job_type_summary['original']
 
-        job_type_original_summary = job_type_summary['original']
+            for section_name in ("repeated", "id", "it"):
+                job_type_section_summary = job_type_summary[section_name]
 
-        for section_name in ("repeated", "id", "it"):
-            job_type_section_summary = job_type_summary[section_name]
+                for failure in job_type_section_summary['failures']:
+                    if failure in job_type_original_summary['failures']:
+                        count = job_type_section_summary['failures'][failure]['count']
+                        job_type_section_summary['failures'][failure]['failure_reproduced'] += count
+                        job_type_section_summary['failure_reproduced'] += count
 
-            for failure in job_type_section_summary['failures']:
-                if failure in job_type_original_summary['failures']:
-                    count = job_type_section_summary['failures'][failure]['count']
-                    job_type_section_summary['failures'][failure]['failure_reproduced'] += count
-                    job_type_section_summary['failure_reproduced'] += count
-
-            for test in job_type_section_summary['tests']:
-                if test in job_type_original_summary['tests']:
-                    count = job_type_section_summary['tests'][test]['count']
-                    job_type_section_summary['tests'][test]['test_reproduced'] += count
-                    job_type_section_summary['test_reproduced'] += count
+                for test in job_type_section_summary['tests']:
+                    if test in job_type_original_summary['tests']:
+                        count = job_type_section_summary['tests'][test]['count']
+                        job_type_section_summary['tests'][test]['test_reproduced'] += count
+                        job_type_section_summary['test_reproduced'] += count
 
     if not args.include_failures:
         # Remove failures lists from sections
-        for job_type_name in summary:
-            if job_type_name == "revision":
-                continue
-
-            for section_name in summary[job_type_name]:
-                summary_section = summary[job_type_name][section_name]
-                if 'failures' in summary_section:
-                    del summary_section['failures']
-                if 'failure_reproduced' in summary_section:
-                    del summary_section['failure_reproduced']
+        for revision_url in summary:
+            revision_summary = summary[revision_url]
+            for job_type_name in revision_summary:
+                for section_name in revision_summary[job_type_name]:
+                    summary_section = revision_summary[job_type_name][section_name]
+                    if 'failures' in summary_section:
+                        del summary_section['failures']
+                    if 'failure_reproduced' in summary_section:
+                        del summary_section['failure_reproduced']
 
     if not args.include_tests:
         # Remove tests lists from sections
-        for job_type_name in summary:
-            if job_type_name == "revision":
-                continue
-
-            for section_name in summary[job_type_name]:
-                summary_section = summary[job_type_name][section_name]
-                if 'tests' in summary_section:
-                    del summary_section['tests']
-                if 'test_reproduced' in summary_section:
-                    del summary_section['test_reproduced']
+        for revision_url in summary:
+            revision_summary = summary[revision_url]
+            for job_type_name in revision_summary:
+                for section_name in revision_summary[job_type_name]:
+                    summary_section = revision_summary[job_type_name][section_name]
+                    if 'tests' in summary_section:
+                        del summary_section['tests']
+                    if 'test_reproduced' in summary_section:
+                        del summary_section['test_reproduced']
     return summary
 
 
 def load_isolation_push_jobs_json(args):
-    """Load job data from the specified file, collecting the jobs which are
-    related to test isolation (group symbol suffix -I) and organizing them
-    in a dict according to.
+    """Load push/job data from the specified file, organizing it
+    according to the isolation tests and converting the data into
+    the following format:
 
     data = {
-        "revision": "...",
-        "<job-type-name>": {
-            "original": [],
-            "repeated": [],
-            "id": [],
-            "it": [],
+        "<revision_url>": {
+            "<job-type-name>": {
+                "original": [],
+                "repeated": [],
+                "id": [],
+                "it": [],
+            },
         },
         ...
     }
@@ -181,12 +183,13 @@ def convert_push_to_isolation_data(args, push):
     dict according to.
 
     data = {
-        "revision": "...",
-        "<job-type-name>": {
-            "original": [],
-            "repeated": [],
-            "id": [],
-            "it": [],
+        "<revision_url>": {
+            "<job-type-name>": {
+                "original": [],
+                "repeated": [],
+                "id": [],
+                "it": [],
+            },
         },
         ...
     }
@@ -195,9 +198,12 @@ def convert_push_to_isolation_data(args, push):
     repository = get_repository_by_id(push['revisions'][0]['repository_id'])
     revision = push['revisions'][0]['revision']
     revision_url = "%s/rev/%s" % (repository["url"], revision)
-    data = {
-        "revision": revision_url,
-    }
+
+    data = {}
+
+    if revision_url not in data:
+        data[revision_url] = {}
+    revision_data = data[revision_url]
 
     # Find the job_type_names associated with test isolation jobs
     for job in push['jobs']:
@@ -208,7 +214,7 @@ def convert_push_to_isolation_data(args, push):
         if isolation_group or isolation_type:
             job_type_name = job['job_type_name']
             if job_type_name not in data:
-                data[job_type_name] = {
+                revision_data[job_type_name] = {
                     "original": [],
                     "repeated": [],
                     "id": [],
@@ -218,9 +224,9 @@ def convert_push_to_isolation_data(args, push):
     # Collect the test isolation jobs
     for job in push['jobs']:
         job_type_name = job['job_type_name']
-        if job_type_name not in data:
+        if job_type_name not in revision_data:
             continue
-        data_job_type = data[job_type_name]
+        data_job_type = revision_data[job_type_name]
         job_type_symbol = job['job_type_symbol']
         job_group_symbol = job['job_group_symbol']
         isolation_type = is_isolation_job_type_symbol(job_type_symbol)
@@ -258,62 +264,60 @@ def output_csv_summary(args, summary):
     line = line[0:-1]
     print(line)
 
-    for job_type_name in summary:
-        if job_type_name == "revision":
-            continue
+    for revision_url in summary:
+        revision_summary = summary[revision_url]
+        for job_type_name in revision_summary:
+            line = "%s;%s;" % (revision_url, job_type_name)
+            job_type_summary = revision_summary[job_type_name]
+            job_bug_map = revision_summary[job_type_name]['original']['job_bug_map']
+            bugs = ' '.join(sorted(set([ str(job_bug['bug_id']) for job_bug in job_bug_map ])))
+            line += "%s;" % bugs
 
-        line = "%s;%s;" % (summary['revision'], job_type_name)
-        job_type_summary = summary[job_type_name]
-        job_bug_map = summary[job_type_name]['original']['job_bug_map']
-        bugs = ' '.join(sorted(set([ str(job_bug['bug_id']) for job_bug in job_bug_map ])))
-        line += "%s;" % bugs
-
-        for section_name in ("repeated", "id", "it"):
-            job_type_section = job_type_summary[section_name]
-            for property_name in properties:
-                line += "%s;" % job_type_section[property_name]
-            if section_name != "original":
-                if args.include_failures:
-                    line += "%s;" % job_type_section["failure_reproduced"]
-                if args.include_tests:
-                    line += "%s;" % job_type_section["test_reproduced"]
-        line = line[0:-1]
-        print(line)
+            for section_name in ("repeated", "id", "it"):
+                job_type_section = job_type_summary[section_name]
+                for property_name in properties:
+                    line += "%s;" % job_type_section[property_name]
+                if section_name != "original":
+                    if args.include_failures:
+                        line += "%s;" % job_type_section["failure_reproduced"]
+                    if args.include_tests:
+                        line += "%s;" % job_type_section["test_reproduced"]
+            line = line[0:-1]
+            print(line)
 
 
 def output_csv_results(args, summary):
     print("revision;job_type_name;section;result_type;result_name;count;reproduced")
 
-    for job_type_name in summary:
-        if job_type_name == "revision":
-            continue
+    for revision_url in summary:
+        revision_summary = summary[revision_url]
+        for job_type_name in revision_summary:
+            job_type_summary = revision_summary[job_type_name]
 
-        job_type_summary = summary[job_type_name]
-
-        for section_name in ("repeated", "id", "it"):
-            job_type_section = job_type_summary[section_name]
-            if args.include_failures:
-                for failure_message in job_type_section["failures"]:
-                    failure = job_type_section["failures"][failure_message]
-                    print("%s;%s;%s;%s;%s;%s;%s" % (
-                        summary['revision'],
-                        job_type_name,
-                        section_name,
-                        "failure",
-                        failure_message,
-                        failure["count"],
-                        failure["failure_reproduced"]))
-            if args.include_tests:
-                for test_name in job_type_section["tests"]:
-                    test = job_type_section["tests"][test_name]
-                    print("%s;%s;%s;%s;%s;%s;%s" % (
-                        summary['revision'],
-                        job_type_name,
-                        section_name,
-                        "test",
-                        test_name,
-                        test["count"],
-                        test["test_reproduced"]))
+            for section_name in ("repeated", "id", "it"):
+                job_type_section = job_type_summary[section_name]
+                if args.include_failures:
+                    for failure_message in job_type_section["failures"]:
+                        failure = job_type_section["failures"][failure_message]
+                        print("%s;%s;%s;%s;%s;%s;%s" % (
+                            revision_url,
+                            job_type_name,
+                            section_name,
+                            "failure",
+                            failure_message,
+                            failure["count"],
+                            failure["failure_reproduced"]))
+                if args.include_tests:
+                    for test_name in job_type_section["tests"]:
+                        test = job_type_section["tests"][test_name]
+                        print("%s;%s;%s;%s;%s;%s;%s" % (
+                            revision_url,
+                            job_type_name,
+                            section_name,
+                            "test",
+                            test_name,
+                            test["count"],
+                            test["test_reproduced"]))
 
 
 def main():
