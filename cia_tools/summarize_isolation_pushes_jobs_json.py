@@ -167,17 +167,18 @@ def load_isolation_push_jobs_json(args):
         ...
     }
     """
-    if args.file is None or args.file == '-':
-        push = json.loads(sys.stdin.read())[0]
+    if not args.files:
+        pushes = json.loads(sys.stdin.read())
     else:
-        with open(args.file) as input:
-                push = json.loads(input.read())[0]
+        pushes = []
+        for filename in args.files:
+            with open(filename) as input:
+                    pushes.extend(json.loads(input.read()))
 
-    data = convert_push_to_isolation_data(args, push)
-    return data
+    return convert_pushes_to_isolation_data(args, pushes)
 
 
-def convert_push_to_isolation_data(args, push):
+def convert_pushes_to_isolation_data(args, pushes):
     """Take the push/job data, collecting the jobs which are related to
     test isolation (group symbol suffix -I) and organizing them in a
     dict according to.
@@ -195,55 +196,56 @@ def convert_push_to_isolation_data(args, push):
     }
 
     """
-    repository = get_repository_by_id(push['revisions'][0]['repository_id'])
-    revision = push['revisions'][0]['revision']
-    revision_url = "%s/rev/%s" % (repository["url"], revision)
-
     data = {}
 
-    if revision_url not in data:
-        data[revision_url] = {}
-    revision_data = data[revision_url]
+    for push in pushes:
+        repository = get_repository_by_id(push['revisions'][0]['repository_id'])
+        revision = push['revisions'][0]['revision']
+        revision_url = "%s/rev/%s" % (repository["url"], revision)
 
-    # Find the job_type_names associated with test isolation jobs
-    for job in push['jobs']:
-        job_type_symbol = job['job_type_symbol']
-        job_group_symbol = job['job_group_symbol']
-        isolation_group = is_isolation_job_group_symbol(job_group_symbol)
-        isolation_type = is_isolation_job_type_symbol(job_type_symbol)
-        if isolation_group or isolation_type:
+        if revision_url not in data:
+            data[revision_url] = {}
+        revision_data = data[revision_url]
+
+        # Find the job_type_names associated with test isolation jobs
+        for job in push['jobs']:
+            job_type_symbol = job['job_type_symbol']
+            job_group_symbol = job['job_group_symbol']
+            isolation_group = is_isolation_job_group_symbol(job_group_symbol)
+            isolation_type = is_isolation_job_type_symbol(job_type_symbol)
+            if isolation_group or isolation_type:
+                job_type_name = job['job_type_name']
+                if job_type_name not in data:
+                    revision_data[job_type_name] = {
+                        "original": [],
+                        "repeated": [],
+                        "id": [],
+                        "it": [],
+                    }
+
+        # Collect the test isolation jobs
+        for job in push['jobs']:
             job_type_name = job['job_type_name']
-            if job_type_name not in data:
-                revision_data[job_type_name] = {
-                    "original": [],
-                    "repeated": [],
-                    "id": [],
-                    "it": [],
-                }
-
-    # Collect the test isolation jobs
-    for job in push['jobs']:
-        job_type_name = job['job_type_name']
-        if job_type_name not in revision_data:
-            continue
-        data_job_type = revision_data[job_type_name]
-        job_type_symbol = job['job_type_symbol']
-        job_group_symbol = job['job_group_symbol']
-        isolation_type = is_isolation_job_type_symbol(job_type_symbol)
-        isolation_group = is_isolation_job_group_symbol(job_group_symbol)
-        if isolation_type is None and isolation_group is None:
-            data_job_type['original'].append(job)
-            # Add the job_bug_map object to the original job
-            # in order to track which bug was "isolated".
-            job['job_bug_map'] = get_bug_job_map_json(args, repository['name'], job['id'])
-        elif isolation_type == 'id':
-            data_job_type['id'].append(job)
-        elif isolation_type == 'it':
-            data_job_type['it'].append(job)
-        elif isolation_group:
-            data_job_type['repeated'].append(job)
-        else:
-            pass
+            if job_type_name not in revision_data:
+                continue
+            data_job_type = revision_data[job_type_name]
+            job_type_symbol = job['job_type_symbol']
+            job_group_symbol = job['job_group_symbol']
+            isolation_type = is_isolation_job_type_symbol(job_type_symbol)
+            isolation_group = is_isolation_job_group_symbol(job_group_symbol)
+            if isolation_type is None and isolation_group is None:
+                data_job_type['original'].append(job)
+                # Add the job_bug_map object to the original job
+                # in order to track which bug was "isolated".
+                job['job_bug_map'] = get_bug_job_map_json(args, repository['name'], job['id'])
+            elif isolation_type == 'id':
+                data_job_type['id'].append(job)
+            elif isolation_type == 'it':
+                data_job_type['it'].append(job)
+            elif isolation_group:
+                data_job_type['repeated'].append(job)
+            else:
+                pass
 
     return data
 
@@ -357,10 +359,11 @@ Each argument and its value must be on separate lines in the file.
 
     parser.add_argument(
         "--file",
-        dest="file",
-        default=None,
+        dest="files",
+        default=[],
+        action="append",
         help="Load the file produced previously by get_pushes_jobs_json. "
-        "Leave empty or use - to specify stdin.")
+        "Leave empty or use - to specify stdin. Repeat to include more files.")
 
     parser.add_argument(
         "--raw",
