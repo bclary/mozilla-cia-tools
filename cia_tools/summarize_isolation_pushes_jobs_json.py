@@ -120,18 +120,20 @@ def get_test_isolation_bugzilla_data(args):
 
 def summarize_isolation_pushes_jobs_json(args):
     failure_munge_res = [
-        re.compile(r'GECKO[(]([\d]+)[)]'),
-        re.compile(r'PID ([\d]+)'),
+        re.compile(r'GECKO[(]([\d]+)[)] [|] '),
+        re.compile(r'PID ([\d]+) [|] '),
     ]
     def munge_failure(failure):
         for r in failure_munge_res:
             match = r.search(failure)
             if match:
-                failure = failure.replace(match.group(1), '...')
+                failure = failure.replace(match.group(1), '')
         return failure
     def get_test(failure):
         try:
-            return failure.split(' | ')[1]
+            # Handle result | test | message and test | message
+            parts = failure.split(' | ')
+            return parts[len(parts) - 2]
         except IndexError:
             return failure
 
@@ -142,6 +144,7 @@ def summarize_isolation_pushes_jobs_json(args):
     isolation_data = get_test_isolation_bugzilla_data(args)
     for revision_url in isolation_data:
         revision_data = isolation_data[revision_url]
+        revision_data['bug_summary'] = munge_failure(revision_data['bug_summary'])
         new_args = copy.deepcopy(args)
         new_args.revision_url = revision_url
         (new_args.repo, _, new_args.revision) = new_args.revision_url.split('/')[-3:]
@@ -152,12 +155,12 @@ def summarize_isolation_pushes_jobs_json(args):
         if args.test_failure_pattern:
             new_args.test_failure_pattern = args.test_failure_pattern
         else:
-            bug_summary_parts = revision_data['bug_summary'].split(' | ')
-            for i in range(len(bug_summary_parts)):
-                bug_summary_parts[i] = re.escape(bug_summary_parts[i])
-            bug_summary = '|'.join(bug_summary_parts)
-            new_args.test_failure_pattern = bug_summary
-            #new_args.test_failure_pattern = re_special.sub('.', new_args.test_failure_pattern)
+            pattern_parts = revision_data['bug_summary'].split(' | ')
+            for i in range(len(pattern_parts)):
+                pattern_parts[i] = re.escape(pattern_parts[i])
+            pattern = '|'.join(pattern_parts)
+            new_args.test_failure_pattern = pattern
+            revision_data["pattern"] = pattern
         jobs_args.compile_filters(new_args)
         # Load the pushes/jobs data from cache if it exists.
         pushes_jobs_cache_dir = os.path.join(args.cache, new_args.repo)
@@ -228,6 +231,8 @@ def summarize_isolation_pushes_jobs_json(args):
                             if section_name != 'original':
                                 job_type_section_summary['failures'][failure]['failure_reproduced'] = 0
                         job_type_section_summary['failures'][failure]['count'] += 1
+                        if job_type_summary["bug"]["bug_summary"] in failure:
+                            job_type_summary["bug"]["reproduced"][section_name] += 1
 
                 for failure in job_type_section_summary['failures']:
                     test = get_test(failure)
@@ -373,7 +378,12 @@ def convert_pushes_to_isolation_data(args, pushes):
 
 
 def output_csv_summary(args, summary):
-    line = "revision;job_type_name;bugs;"
+    line = "revision;job_type_name;bug;summary;"
+
+    for section_name in ("original", "repeated", "id", "it"):
+        line += "reproduced.%s;" % section_name
+
+    line += "bugmap;"
 
     properties = ("run_time", "jobs_total", "jobs_failed", "tests_failed")
 
@@ -391,10 +401,16 @@ def output_csv_summary(args, summary):
     for revision_url in summary:
         revision_summary = summary[revision_url]
         for job_type_name in revision_summary:
-            line = "%s;%s;" % (revision_url, job_type_name)
             job_type_summary = revision_summary[job_type_name]
+            bug_id = job_type_summary["bug"]["bug_id"]
+            bug_summary = job_type_summary["bug"]["bug_summary"].replace(';', ' ')
             job_bug_map = revision_summary[job_type_name]['original']['job_bug_map']
             bugs = ' '.join(sorted(set([ str(job_bug['bug_id']) for job_bug in job_bug_map ])))
+            line = "%s;%s;%s;%s;" % (revision_url, job_type_name, bug_id, bug_summary)
+
+            for section_name in ("original", "repeated", "id", "it"):
+                line += "%s;" % job_type_summary["bug"]["reproduced"][section_name]
+
             line += "%s;" % bugs
 
             for section_name in ("repeated", "id", "it"):
@@ -462,10 +478,15 @@ def main():
         description="""
 Analyze pushes from bugs marked with whiteboard [test isolation].
 
-Reads json produced by get_pushes_jobs_json.py either from stdin
-or from a file and produces a summary of runtimes and test failures, writing
-results as either csv text or json to stdout. By default, output is written
-as formatted json.
+Queries Bugzilla for bugs marked with [test isolation] in the whiteboard,
+determines the bug number, bug summary and revision from the bug then reads
+push and job data from Treeherder and produces a summary of runtimes and
+test failures, writing results as either csv text or json to stdout. By
+default, output is writtenas formatted json.
+
+Intermediate results are stored in a cache directory to re-used on subsequent
+runs. When changing options, it is safest to delete the cache directory and
+start over.
 
 %s
 

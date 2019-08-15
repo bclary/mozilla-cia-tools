@@ -563,18 +563,53 @@ and its value must be on separate lines in the file.
 Summarize job json for Test Isolation
 
 ``` shell
-$ ./summarize_isolation_pushes_jobs_json.py --help
+$ ./summarize_isolation_pushes_jobs_json.py  --help
 usage: summarize_isolation_pushes_jobs_json.py [-h]
                                                [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
                                                [--treeherder TREEHERDER]
-                                               [--file FILE] [--raw] [--csv]
+                                               [--repo {mozilla-central,autoland,mozilla-inbound,try,mozilla-beta,mozilla-release,mozilla-esr68}]
+                                               [--author AUTHOR]
+                                               [--date-range DATE_RANGE | --revision REVISION | --commit-revision COMMIT_REVISION | --revision-url REVISION_URL | --revision-range REVISION_RANGE]
+                                               [--add-bugzilla-suggestions]
+                                               [--test-failure-pattern TEST_FAILURE_PATTERN]
+                                               [--build-platform BUILD_PLATFORM]
+                                               [--job-group-name JOB_GROUP_NAME]
+                                               [--job-group-symbol JOB_GROUP_SYMBOL]
+                                               [--job-type-name JOB_TYPE_NAME]
+                                               [--job-type-symbol JOB_TYPE_SYMBOL]
+                                               [--machine-name MACHINE_NAME]
+                                               [--platform PLATFORM]
+                                               [--platform-option PLATFORM_OPTION]
+                                               [--result RESULT]
+                                               [--state STATE] [--tier TIER]
+                                               [--cache CACHE]
+                                               [--bug-creation-time BUG_CREATION_TIME]
+                                               [--bugs-after BUGS_AFTER]
+                                               [--raw] [--csv-summary]
+                                               [--csv-results]
                                                [--include-failures]
                                                [--include-tests]
 
-Reads json produced by get_pushes_jobs_json.py either from stdin
-or from a file and produces a summary of runtimes and test failures, writing
-results as either csv text or json to stdout. By default, output is written
-as formatted json.
+Analyze pushes from bugs marked with whiteboard [test isolation].
+
+Queries Bugzilla for bugs marked with [test isolation] in the whiteboard,
+determines the bug number, bug summary and revision from the bug then reads
+push and job data from Treeherder and produces a summary of runtimes and
+test failures, writing results as either csv text or json to stdout. By
+default, output is writtenas formatted json.
+
+Intermediate results are stored in a cache directory to re-used on subsequent
+runs. When changing options, it is safest to delete the cache directory and
+start over.
+
+Push Related Arguments
+
+If a push isn't selected, the most recent push will be returned.
+
+Job Related Arguments
+
+Job related pattern objects are used to select the jobs which will be
+returned. All specified patterns must match to return a job.
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -582,9 +617,49 @@ optional arguments:
                         Logging level. (default: INFO)
   --treeherder TREEHERDER
                         Treeherder url. (default: https://treeherder.mozilla.org)
-  --file FILE           Load the file produced previously by get_pushes_jobs_json. Leave empty or use - to specify stdin. (default: None)
+  --repo {mozilla-central,autoland,mozilla-inbound,try,mozilla-beta,mozilla-release,mozilla-esr68}
+                        repository name to query. (default: mozilla-central)
+  --author AUTHOR       Push author email. Should be specified if --repo is try and more
+                        than one revision is selected. (default: None)
+  --date-range DATE_RANGE
+                        Push date range startdate enddate CCYY-MM-DD CCYY-MM-DD. (default: None)
+  --revision REVISION   Push Revision. (default: None)
+  --commit-revision COMMIT_REVISION
+                        Either Push Revision or any commit referenced in the push. (default: None)
+  --revision-url REVISION_URL
+                        Url to push revision which can be used in place of --repo and --revision. (default: None)
+  --revision-range REVISION_RANGE
+                        Push revision range fromchange-tochange. (default: None)
+  --add-bugzilla-suggestions
+                        Add bugzilla suggestions to job objects. (default: False)
+  --test-failure-pattern TEST_FAILURE_PATTERN
+                        Include failures from bugzilla suggestions matching this regular expression. (default: None)
+  --build-platform BUILD_PLATFORM
+                        Match job build platform regular expression. (default: None)
+  --job-group-name JOB_GROUP_NAME
+                        Match job group name regular expression. (default: None)
+  --job-group-symbol JOB_GROUP_SYMBOL
+                        Match job group symbol regular expression (default: None)
+  --job-type-name JOB_TYPE_NAME
+                        Match job type name regular expression. (default: None)
+  --job-type-symbol JOB_TYPE_SYMBOL
+                        Match job type symbol regular expression. (default: None)
+  --machine-name MACHINE_NAME
+                        Match job machine name regular expression. (default: None)
+  --platform PLATFORM   Match job platform regular expression. (default: None)
+  --platform-option PLATFORM_OPTION
+                        Match job platform option regular expression: opt, debug, pgo,... (default: None)
+  --result RESULT       Match job result regular expression: unknown, success, testfailed, .... (default: None)
+  --state STATE         Match job state regular expression: pending, running, completed. (default: None)
+  --tier TIER           Match job tier regular expression. (default: None)
+  --cache CACHE         Directory used to store cached objects retrieved from Bugzilla and Treeherder. (default: /tmp/test_isolation_cache/)
+  --bug-creation-time BUG_CREATION_TIME
+                        Starting creation time in YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSTZ format. Example 2019-07-27T17:28:00PDT or 2019-07-28T00:28:00Z' (default: 2019-06-14)
+  --bugs-after BUGS_AFTER
+                        Only returns bugs whose id is greater than this integer. (default: 0)
   --raw                 Do not reformat/indent json. (default: False)
-  --csv                 Output in csv format. Does not include individual failures or tests. (default: False)
+  --csv-summary         Output summary data in csv format. Does not include individual failures or tests. (default: False)
+  --csv-results         Output test data in csv format. Does not include individual failures. (default: False)
   --include-failures    Include individual failures in output. (default: False)
   --include-tests       Include individual tests in output. (default: False)
 
@@ -599,53 +674,12 @@ Each argument and its value must be on separate lines in the file.
 #### Example
 
 ``` shell
-$ ./get_pushes_jobs_json.py \
-  --revision-url 'https://hg.mozilla.org/integration/autoland/rev/948869e38bce72ae635e1ab629ab42ce0af444cc' \
-  --job-type-name test-windows10-64/debug-xpcshell-e10s-2 --add-bugzilla-suggestions --test-failure-pattern '(TEST|PROCESS)' | \
-  ./summarize_isolation_pushes_jobs_json.py --include-tests
+$ ./summarize_isolation_pushes_jobs_json.py  \
+    --bug-creation-time 2019-08-07T00:00:00 \
+	--include-failures --include-tests \
+	--add-bugzilla-suggestions \
+	--csv-summary  > /tmp/test_isolation_cache/csv-summary.csv
 ```
-
-``` shell
-{
-  "test-windows10-64/debug-xpcshell-e10s-2": {
-    "original": {
-      "run_time": 8178,
-      "jobs_failed": 1,
-      "jobs_total": 5,
-      "tests_failed": 5
-    },
-    "repeated": {
-      "run_time": 163725,
-      "jobs_failed": 6,
-      "jobs_total": 100,
-      "tests_failed": 25,
-      "reproduced": 15
-    },
-    "id": {
-      "run_time": 15116,
-      "jobs_failed": 0,
-      "jobs_total": 100,
-      "tests_failed": 0,
-      "reproduced": 0
-    },
-    "it": {
-      "run_time": 11213,
-      "jobs_failed": 7,
-      "jobs_total": 100,
-      "tests_failed": 35,
-      "reproduced": 35
-    }
-  }
-}
-```
-
-where each section contains
-
-- `run_time` is the sum of `end_timestamp - start_timestamp` for each job.
-- `jobs_failed` is the count of jobs with `result == 'testfailed` for each job.
-- `jobs_total` is the total number of jobs.
-- `tests_failed` is the total number of test failures as determined from the bugzilla_suggestions search terms for the jobs.
-- `reproduced` is the number of the test failuress which reproduced a failure in the original section.
 
 ### duplicate-opt-pgo-tasks.py
 
