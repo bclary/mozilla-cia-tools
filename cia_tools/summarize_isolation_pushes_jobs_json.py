@@ -4,28 +4,118 @@
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import argparse
+import copy
 import json
 import logging
+import os
 import re
-import sys
 
-from common_args import ArgumentFormatter, log_level_args, treeherder_urls_args
-from treeherder import get_repositories, get_repository_by_id, get_bug_job_map_json
+import utils
+
+from common_args import (
+    ArgumentFormatter,
+    jobs_args,
+    log_level_args,
+    pushes_args,
+    treeherder_urls_args,
+)
+
+from treeherder import (
+    get_bug_job_map_json,
+    get_client,
+    get_job_by_repo_job_id_json,
+    get_pushes_jobs_json,
+    get_repositories,
+    get_repository_by_id,
+)
 
 
-re_job_group_symbol = re.compile(r'-I$')
-re_job_type_symbol = re.compile(r'-(id|it)$')
+BUGZILLA_URL = 'https://bugzilla.mozilla.org/rest/'
 
 
-def is_isolation_job_group_symbol(job_group_symbol):
-    return re_job_group_symbol.search(job_group_symbol)
+def get_test_isolation_bugzilla_data(args):
+    """Query Bugzilla for bugs marked with [test isolation] in the
+    whiteboard.  Return a dictionary keyed by revision url containing
+    the bug id and summary.
 
+    """
 
-def is_isolation_job_type_symbol(job_type_symbol):
-    match = re_job_type_symbol.search(job_type_symbol)
-    if match:
-        return match.group(1)
-    return None
+    logger = logging.getLogger()
+
+    # Load the bugzilla data from cache if it exists.
+    bugzilla_cache = os.path.join(args.cache, "bugzilla.json")
+    if os.path.exists(bugzilla_cache):
+        with open(bugzilla_cache) as cache:
+            return json.loads(cache.read())
+
+    data = {}
+
+    client = get_client(args)
+
+    re_logview = re.compile(r'https://treeherder.mozilla.org/logviewer.html#\?job_id=([0-9]+)&repo=([a-z-]+)')
+    query = BUGZILLA_URL + 'bug?'
+    query_terms = {
+        'include_fields': 'id',
+        'creator': 'intermittent-bug-filer@mozilla.bugs',
+        'creation_time': args.bug_creation_time,
+        'status_whiteboard': '[test isolation]',
+        'limit': 100,
+        'offset': 0,
+        }
+
+    while True:
+        response = utils.get_remote_json(query, params=query_terms)
+        if 'error' in response:
+            logger.error('Bugzilla({}, {}): {}'.format(query, query_terms, response))
+            return
+
+        if len(response['bugs']) == 0:
+            break
+
+        # update query terms for next iteration of the loop.
+        query_terms['offset'] += query_terms['limit']
+
+        for bug in response['bugs']:
+            #https://bugzilla.mozilla.org/rest/bug/1559260/comment
+
+            if bug['id'] <= args.bugs_after:
+                continue
+
+            query2 = BUGZILLA_URL + 'bug/%s' % bug['id']
+            response2 = utils.get_remote_json(query2)
+            if 'error' in response2:
+                logger.error('Bugzilla({}): {}'.format(query2, response2))
+                return
+
+            bug_summary = response2['bugs'][0]['summary'].replace('Intermittent ', '')
+
+            query3 = BUGZILLA_URL + 'bug/%s/comment' % bug['id']
+            response3 = utils.get_remote_json(query3)
+            if 'error' in response3:
+                logger.error('Bugzilla({}): {}'.format(query, response3))
+                return
+
+            raw_text = response3['bugs'][str(bug['id'])]['comments'][0]['raw_text']
+            match = re_logview.search(raw_text)
+            if match:
+                job_id = int(match.group(1))
+                repo = match.group(2)
+                job = get_job_by_repo_job_id_json(args, repo, job_id)
+                push_id = job['push_id']
+                push = client.get_pushes(repo, id=push_id)[0]
+                repository = get_repository_by_id(push['revisions'][0]['repository_id'])
+                revision = push['revisions'][0]['revision']
+                revision_url = "%s/rev/%s" % (repository["url"], revision)
+
+                data[revision_url] = {
+                    'bug_id': bug['id'],
+                    'bug_summary': bug_summary
+                }
+
+    with open(bugzilla_cache, mode='w+b') as cache:
+        cache.write(bytes(json.dumps(data, indent=2), encoding='utf-8'))
+
+    return data
 
 
 def summarize_isolation_pushes_jobs_json(args):
@@ -45,9 +135,48 @@ def summarize_isolation_pushes_jobs_json(args):
         except IndexError:
             return failure
 
-    summary = {}
+    pushes = []
 
-    data = load_isolation_push_jobs_json(args)
+    re_special = re.compile(r'[\[\]\(\)]')
+
+    isolation_data = get_test_isolation_bugzilla_data(args)
+    for revision_url in isolation_data:
+        revision_data = isolation_data[revision_url]
+        new_args = copy.deepcopy(args)
+        new_args.revision_url = revision_url
+        (new_args.repo, _, new_args.revision) = new_args.revision_url.split('/')[-3:]
+        new_args.add_bugzilla_suggestions = True
+        new_args.state = 'completed'
+        new_args.job_type_name = '^test-'
+
+        if args.test_failure_pattern:
+            new_args.test_failure_pattern = args.test_failure_pattern
+        else:
+            bug_summary_parts = revision_data['bug_summary'].split(' | ')
+            for i in range(len(bug_summary_parts)):
+                bug_summary_parts[i] = re.escape(bug_summary_parts[i])
+            bug_summary = '|'.join(bug_summary_parts)
+            new_args.test_failure_pattern = bug_summary
+            #new_args.test_failure_pattern = re_special.sub('.', new_args.test_failure_pattern)
+        jobs_args.compile_filters(new_args)
+        # Load the pushes/jobs data from cache if it exists.
+        pushes_jobs_cache_dir = os.path.join(args.cache, new_args.repo)
+        if not os.path.isdir(pushes_jobs_cache_dir):
+            os.makedirs(pushes_jobs_cache_dir)
+        pushes_jobs_cache = os.path.join(pushes_jobs_cache_dir, new_args.revision)
+        if os.path.exists(pushes_jobs_cache):
+            with open(pushes_jobs_cache) as cache:
+                new_pushes = json.loads(cache.read())
+        else:
+            new_pushes = get_pushes_jobs_json(new_args)
+            with open(pushes_jobs_cache, mode='w+b') as cache:
+                cache.write(bytes(json.dumps(new_pushes, indent=2), encoding='utf-8'))
+
+        pushes.extend(new_pushes)
+
+    data = convert_pushes_to_isolation_data(args, pushes)
+
+    summary = {}
 
     for revision_url in data:
 
@@ -61,6 +190,15 @@ def summarize_isolation_pushes_jobs_json(args):
             if job_type_name not in revision_summary:
                 revision_summary[job_type_name] = job_type_summary = {}
             job_type = data[revision_url][job_type_name]
+
+            if "bug" not in job_type_summary:
+                job_type_summary["bug"] = isolation_data[revision_url]
+                job_type_summary["bug"]["reproduced"] = {
+                    "original": 0,
+                    "repeated": 0,
+                    "id": 0,
+                    "it": 0,
+                }
 
             for section_name in ("original", "repeated", "id", "it"):
                 if section_name not in job_type_summary:
@@ -150,34 +288,6 @@ def summarize_isolation_pushes_jobs_json(args):
     return summary
 
 
-def load_isolation_push_jobs_json(args):
-    """Load push/job data from the specified file, organizing it
-    according to the isolation tests and converting the data into
-    the following format:
-
-    data = {
-        "<revision_url>": {
-            "<job-type-name>": {
-                "original": [],
-                "repeated": [],
-                "id": [],
-                "it": [],
-            },
-        },
-        ...
-    }
-    """
-    if not args.files:
-        pushes = json.loads(sys.stdin.read())
-    else:
-        pushes = []
-        for filename in args.files:
-            with open(filename) as input:
-                    pushes.extend(json.loads(input.read()))
-
-    return convert_pushes_to_isolation_data(args, pushes)
-
-
 def convert_pushes_to_isolation_data(args, pushes):
     """Take the push/job data, collecting the jobs which are related to
     test isolation (group symbol suffix -I) and organizing them in a
@@ -196,6 +306,18 @@ def convert_pushes_to_isolation_data(args, pushes):
     }
 
     """
+    re_job_group_symbol = re.compile(r'-I$')
+    re_job_type_symbol = re.compile(r'-(id|it)$')
+
+    def is_isolation_job_group_symbol(job_group_symbol):
+        return re_job_group_symbol.search(job_group_symbol)
+
+    def is_isolation_job_type_symbol(job_type_symbol):
+        match = re_job_type_symbol.search(job_type_symbol)
+        if match:
+            return match.group(1)
+        return None
+
     data = {}
 
     for push in pushes:
@@ -325,7 +447,12 @@ def output_csv_results(args, summary):
 def main():
     """main"""
 
-    parent_parsers = [log_level_args.get_parser(), treeherder_urls_args.get_parser()]
+    parent_parsers = [
+        log_level_args.get_parser(),
+        treeherder_urls_args.get_parser(),
+        pushes_args.get_parser(),
+        jobs_args.get_parser(),
+    ]
 
     additional_descriptions = [parser.description for parser in parent_parsers
                                if parser.description]
@@ -333,6 +460,8 @@ def main():
 
     parser = argparse.ArgumentParser(
         description="""
+Analyze pushes from bugs marked with whiteboard [test isolation].
+
 Reads json produced by get_pushes_jobs_json.py either from stdin
 or from a file and produces a summary of runtimes and test failures, writing
 results as either csv text or json to stdout. By default, output is written
@@ -358,12 +487,23 @@ Each argument and its value must be on separate lines in the file.
     )
 
     parser.add_argument(
-        "--file",
-        dest="files",
-        default=[],
-        action="append",
-        help="Load the file produced previously by get_pushes_jobs_json. "
-        "Leave empty or use - to specify stdin. Repeat to include more files.")
+        "--cache",
+        default="/tmp/test_isolation_cache/",
+        help="Directory used to store cached objects retrieved from Bugzilla "
+        "and Treeherder.")
+
+    parser.add_argument(
+        '--bug-creation-time',
+        help="Starting creation time in YYYY-MM-DD or "
+        "YYYY-MM-DDTHH:MM:SSTZ format. "
+        "Example 2019-07-27T17:28:00PDT or 2019-07-28T00:28:00Z'",
+        default="2019-06-14")
+
+    parser.add_argument(
+        '--bugs-after',
+        type=int,
+        help="Only returns bugs whose id is greater than this integer.",
+        default=0)
 
     parser.add_argument(
         "--raw",
@@ -402,6 +542,9 @@ Each argument and its value must be on separate lines in the file.
     logging.basicConfig(level=getattr(logging, args.log_level))
     logger = logging.getLogger()
     logger.debug("main %s", args)
+
+    if not os.path.isdir(args.cache):
+        os.makedirs(args.cache)
 
     get_repositories(args)
 
