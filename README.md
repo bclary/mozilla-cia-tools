@@ -528,36 +528,6 @@ Each argument and its value must be on separate lines in the file.
 
 ```
 
-### isolation_bugs.py
-
-Get revisions from test isolation bugs.
-
-``` shell
-$ ./isolation_bugs.py --help
-usage: isolation_bugs.py [-h]
-                         [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
-                         [--treeherder TREEHERDER]
-                         [--creation-time CREATION_TIME]
-
-Get revisions from bugs marked with whiteboard [test isolation].
-
-optional arguments:
-  -h, --help            show this help message and exit
-  --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
-                        Logging level. (default: INFO)
-  --treeherder TREEHERDER
-                        Treeherder url. (default: https://treeherder.mozilla.org)
-  --creation-time CREATION_TIME
-                        Starting creation time in YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSTZ format. Example 2019-07-27T17:28:00PDT or 2019-07-28T00:28:00Z' (default: 2019-06-14)
-
-You can save a set of arguments to a file and specify them later
-using the @argfile syntax. The arguments contained in the file will
-replace @argfile in the command line. Multiple files can be loaded
-into the command line through the use of the @ syntax. Each argument
-and its value must be on separate lines in the file.
-
-```
-
 ### summarize_isolation_pushes_jobs_json.py
 
 Summarize job json for Test Isolation
