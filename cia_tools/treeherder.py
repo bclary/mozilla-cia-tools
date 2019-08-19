@@ -3,6 +3,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import datetime
 import logging
 import time
 
@@ -153,6 +154,45 @@ def get_bug_job_map_json(args, repo, job_id):
         bug_job_map = None
 
     return bug_job_map
+
+
+def get_failure_count_json(args, repo, bug_id, start_date, end_date):
+    """get_failure_count_json
+
+    Retrieve list of objects by repo/project, bug and date range.
+    [
+        {
+            "date": "2019-07-10",
+            "test_runs": 154,
+            "failure_count": 0
+        },
+    ]
+
+    """
+    logger = logging.getLogger()
+
+    if type(start_date) == datetime.datetime:
+        start_date = start_date.strftime('%Y-%m-%d')
+    if type(end_date) == datetime.datetime:
+        end_date = end_date.strftime('%Y-%m-%d')
+
+    failure_count_url = '%s/api/failurecount/?startday=%s&endday=%s&tree=%s&bug=%s' % (
+        (args.treeherder, start_date, end_date, repo, bug_id))
+
+    # Attempt up to 3 times to work around connection failures.
+    for attempt in range(3):
+        try:
+            failure_count_json = utils.get_remote_json(failure_count_url)
+            break
+        except requests.exceptions.ConnectionError:
+            logger.exception('get_failure_count_json attempt %s', attempt)
+            if attempt != 2:
+                time.sleep(30)
+    if attempt == 2:
+        logger.warning("Unable to get failure_count %s", failure_count_url)
+        failure_count_json = None
+
+    return failure_count_json
 
 
 def get_repositories(args):

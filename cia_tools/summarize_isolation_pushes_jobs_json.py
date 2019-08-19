@@ -5,6 +5,7 @@
 
 import argparse
 import copy
+import datetime
 import json
 import logging
 import os
@@ -25,6 +26,7 @@ from treeherder import (
     get_client,
     get_job_by_repo_job_id_json,
     get_pushes_jobs_json,
+    get_failure_count_json,
     get_repositories,
     get_repository_by_id,
 )
@@ -48,6 +50,8 @@ def get_test_isolation_bugzilla_data(args):
         with open(bugzilla_cache) as cache:
             return json.loads(cache.read())
 
+    now = datetime.datetime.now()
+
     data = {}
 
     client = get_client(args)
@@ -55,7 +59,7 @@ def get_test_isolation_bugzilla_data(args):
     re_logview = re.compile(r'https://treeherder.mozilla.org/logviewer.html#\?job_id=([0-9]+)&repo=([a-z-]+)')
     query = BUGZILLA_URL + 'bug?'
     query_terms = {
-        'include_fields': 'id',
+        'include_fields': 'id,creation_time',
         'creator': 'intermittent-bug-filer@mozilla.bugs',
         'creation_time': args.bug_creation_time,
         'status_whiteboard': '[test isolation]',
@@ -112,6 +116,23 @@ def get_test_isolation_bugzilla_data(args):
                     'bug_summary': bug_summary
                 }
 
+                # Get failure counts for trunk for this bug for the two weeks following
+                # the creation of the bug. Ignore failure counts for bugs who are less
+                # than 2 weeks old.
+                # TODO: Allow in place updating of bugzilla.json so that we can reprocess
+                # the failure counts without having to query the full set of bugs.
+                start_date = datetime.datetime.strptime(
+                    bug['creation_time'].rstrip('Z'), '%Y-%m-%dT%H:%M:%S')
+                end_date = start_date + datetime.timedelta(weeks=2)
+                failure_count_json = get_failure_count_json(args, 'trunk', bug['id'], start_date, end_date)
+                if now - start_date < datetime.timedelta(weeks=2):
+                    failure_count = None
+                else:
+                    failure_count = 0
+                    for failures in failure_count_json:
+                        failure_count += failures['failure_count']
+                data[revision_url]['failure_count'] = failure_count
+
     with open(bugzilla_cache, mode='w+b') as cache:
         cache.write(bytes(json.dumps(data, indent=2), encoding='utf-8'))
 
@@ -138,8 +159,6 @@ def summarize_isolation_pushes_jobs_json(args):
             return failure
 
     pushes = []
-
-    re_special = re.compile(r'[\[\]\(\)]')
 
     isolation_data = get_test_isolation_bugzilla_data(args)
     for revision_url in isolation_data:
@@ -378,7 +397,7 @@ def convert_pushes_to_isolation_data(args, pushes):
 
 
 def output_csv_summary(args, summary):
-    line = "revision;job_type_name;bug;summary;"
+    line = "revision;job_type_name;bug;summary;failure_count;"
 
     for section_name in ("original", "repeated", "id", "it"):
         line += "reproduced.%s;" % section_name
@@ -404,9 +423,11 @@ def output_csv_summary(args, summary):
             job_type_summary = revision_summary[job_type_name]
             bug_id = job_type_summary["bug"]["bug_id"]
             bug_summary = job_type_summary["bug"]["bug_summary"].replace(';', ' ')
+            failure_count = job_type_summary["bug"]["failure_count"]
             job_bug_map = revision_summary[job_type_name]['original']['job_bug_map']
             bugs = ' '.join(sorted(set([ str(job_bug['bug_id']) for job_bug in job_bug_map ])))
-            line = "%s;%s;%s;%s;" % (revision_url, job_type_name, bug_id, bug_summary)
+            line = "%s;%s;%s;%s;%s;" % (
+                revision_url, job_type_name, bug_id, bug_summary, failure_count)
 
             for section_name in ("original", "repeated", "id", "it"):
                 line += "%s;" % job_type_summary["bug"]["reproduced"][section_name]
