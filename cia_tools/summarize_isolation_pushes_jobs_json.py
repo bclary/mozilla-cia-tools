@@ -45,7 +45,7 @@ def get_test_isolation_bugzilla_data(args):
     logger = logging.getLogger()
 
     # Load the bugzilla data from cache if it exists.
-    bugzilla_cache = os.path.join(args.cache, "bugzilla.json")
+    bugzilla_cache = os.path.join(args.cache, 'bugzilla.json')
     if os.path.exists(bugzilla_cache):
         with open(bugzilla_cache) as cache:
             return json.loads(cache.read())
@@ -109,7 +109,7 @@ def get_test_isolation_bugzilla_data(args):
                 push = client.get_pushes(repo, id=push_id)[0]
                 repository = get_repository_by_id(push['revisions'][0]['repository_id'])
                 revision = push['revisions'][0]['revision']
-                revision_url = "%s/rev/%s" % (repository["url"], revision)
+                revision_url = '%s/rev/%s' % (repository['url'], revision)
 
                 data[revision_url] = {
                     'bug_id': bug['id'],
@@ -179,7 +179,7 @@ def summarize_isolation_pushes_jobs_json(args):
                 pattern_parts[i] = re.escape(pattern_parts[i])
             pattern = '|'.join(pattern_parts)
             new_args.test_failure_pattern = pattern
-            revision_data["pattern"] = pattern
+            revision_data['pattern'] = pattern
         jobs_args.compile_filters(new_args)
         # Load the pushes/jobs data from cache if it exists.
         pushes_jobs_cache_dir = os.path.join(args.cache, new_args.repo)
@@ -213,16 +213,16 @@ def summarize_isolation_pushes_jobs_json(args):
                 revision_summary[job_type_name] = job_type_summary = {}
             job_type = data[revision_url][job_type_name]
 
-            if "bug" not in job_type_summary:
-                job_type_summary["bug"] = isolation_data[revision_url]
-                job_type_summary["bug"]["reproduced"] = {
-                    "original": 0,
-                    "repeated": 0,
-                    "id": 0,
-                    "it": 0,
+            if 'bug' not in job_type_summary:
+                job_type_summary['bug'] = isolation_data[revision_url]
+                job_type_summary['bug']['reproduced'] = {
+                    'original': 0,
+                    'repeated': 0,
+                    'id': 0,
+                    'it': 0,
                 }
 
-            for section_name in ("original", "repeated", "id", "it"):
+            for section_name in ('original', 'repeated', 'id', 'it'):
                 if section_name not in job_type_summary:
                     job_type_summary[section_name] = job_type_section_summary = {}
                     job_type_section_summary['failures'] = {}
@@ -250,8 +250,8 @@ def summarize_isolation_pushes_jobs_json(args):
                             if section_name != 'original':
                                 job_type_section_summary['failures'][failure]['failure_reproduced'] = 0
                         job_type_section_summary['failures'][failure]['count'] += 1
-                        if job_type_summary["bug"]["bug_summary"] in failure:
-                            job_type_summary["bug"]["reproduced"][section_name] += 1
+                        if job_type_summary['bug']['bug_summary'] in failure:
+                            job_type_summary['bug']['reproduced'][section_name] += 1
 
                 for failure in job_type_section_summary['failures']:
                     test = get_test(failure)
@@ -271,7 +271,7 @@ def summarize_isolation_pushes_jobs_json(args):
 
             job_type_original_summary = job_type_summary['original']
 
-            for section_name in ("repeated", "id", "it"):
+            for section_name in ('repeated', 'id', 'it'):
                 job_type_section_summary = job_type_summary[section_name]
 
                 for failure in job_type_section_summary['failures']:
@@ -318,12 +318,12 @@ def convert_pushes_to_isolation_data(args, pushes):
     dict according to.
 
     data = {
-        "<revision_url>": {
-            "<job-type-name>": {
-                "original": [],
-                "repeated": [],
-                "id": [],
-                "it": [],
+        '<revision_url>': {
+            '<job-type-name>': {
+                'original': [],
+                'repeated': [],
+                'id': [],
+                'it': [],
             },
         },
         ...
@@ -347,7 +347,7 @@ def convert_pushes_to_isolation_data(args, pushes):
     for push in pushes:
         repository = get_repository_by_id(push['revisions'][0]['repository_id'])
         revision = push['revisions'][0]['revision']
-        revision_url = "%s/rev/%s" % (repository["url"], revision)
+        revision_url = '%s/rev/%s' % (repository['url'], revision)
 
         if revision_url not in data:
             data[revision_url] = {}
@@ -363,10 +363,10 @@ def convert_pushes_to_isolation_data(args, pushes):
                 job_type_name = job['job_type_name']
                 if job_type_name not in data:
                     revision_data[job_type_name] = {
-                        "original": [],
-                        "repeated": [],
-                        "id": [],
-                        "it": [],
+                        'original': [],
+                        'repeated': [],
+                        'id': [],
+                        'it': [],
                     }
 
         # Collect the test isolation jobs
@@ -397,22 +397,22 @@ def convert_pushes_to_isolation_data(args, pushes):
 
 
 def output_csv_summary(args, summary):
-    line = "revision;job_type_name;bug;summary;failure_count;"
+    line = 'revision;job_type_name;bug;summary;failure_count;'
 
-    for section_name in ("original", "repeated", "id", "it"):
-        line += "reproduced.%s;" % section_name
+    for section_name in ('original', 'repeated', 'id', 'it'):
+        line += 'reproduced.%s;' % section_name
 
-    line += "bugmap;"
+    line += 'bugmap;'
 
-    properties = ("run_time", "jobs_total", "jobs_failed", "tests_failed")
+    properties = ('run_time', 'jobs_total', 'jobs_failed', 'tests_failed')
 
-    for section_name in ("repeated", "id", "it"):
+    for section_name in ('repeated', 'id', 'it'):
         for property_name in properties:
-            line += "%s.%s;" % (section_name, property_name)
+            line += '%s.%s;' % (section_name, property_name)
         if args.include_failures:
-            line += "%s.failure_reproduced;" % section_name
+            line += '%s.failure_reproduced;' % section_name
         if args.include_tests:
-            line += "%s.test_reproduced;" % section_name
+            line += '%s.test_reproduced;' % section_name
 
     line = line[0:-1]
     print(line)
@@ -421,64 +421,64 @@ def output_csv_summary(args, summary):
         revision_summary = summary[revision_url]
         for job_type_name in revision_summary:
             job_type_summary = revision_summary[job_type_name]
-            bug_id = job_type_summary["bug"]["bug_id"]
-            bug_summary = job_type_summary["bug"]["bug_summary"].replace(';', ' ')
-            failure_count = job_type_summary["bug"]["failure_count"]
+            bug_id = job_type_summary['bug']['bug_id']
+            bug_summary = job_type_summary['bug']['bug_summary'].replace(';', ' ')
+            failure_count = job_type_summary['bug']['failure_count']
             job_bug_map = revision_summary[job_type_name]['original']['job_bug_map']
             bugs = ' '.join(sorted(set([ str(job_bug['bug_id']) for job_bug in job_bug_map ])))
-            line = "%s;%s;%s;%s;%s;" % (
+            line = '%s;%s;%s;%s;%s;' % (
                 revision_url, job_type_name, bug_id, bug_summary, failure_count)
 
-            for section_name in ("original", "repeated", "id", "it"):
-                line += "%s;" % job_type_summary["bug"]["reproduced"][section_name]
+            for section_name in ('original', 'repeated', 'id', 'it'):
+                line += '%s;' % job_type_summary['bug']['reproduced'][section_name]
 
-            line += "%s;" % bugs
+            line += '%s;' % bugs
 
-            for section_name in ("repeated", "id", "it"):
+            for section_name in ('repeated', 'id', 'it'):
                 job_type_section = job_type_summary[section_name]
                 for property_name in properties:
-                    line += "%s;" % job_type_section[property_name]
-                if section_name != "original":
+                    line += '%s;' % job_type_section[property_name]
+                if section_name != 'original':
                     if args.include_failures:
-                        line += "%s;" % job_type_section["failure_reproduced"]
+                        line += '%s;' % job_type_section['failure_reproduced']
                     if args.include_tests:
-                        line += "%s;" % job_type_section["test_reproduced"]
+                        line += '%s;' % job_type_section['test_reproduced']
             line = line[0:-1]
             print(line)
 
 
 def output_csv_results(args, summary):
-    print("revision;job_type_name;section;result_type;result_name;count;reproduced")
+    print('revision;job_type_name;section;result_type;result_name;count;reproduced')
 
     for revision_url in summary:
         revision_summary = summary[revision_url]
         for job_type_name in revision_summary:
             job_type_summary = revision_summary[job_type_name]
 
-            for section_name in ("repeated", "id", "it"):
+            for section_name in ('repeated', 'id', 'it'):
                 job_type_section = job_type_summary[section_name]
                 if args.include_failures:
-                    for failure_message in job_type_section["failures"]:
-                        failure = job_type_section["failures"][failure_message]
-                        print("%s;%s;%s;%s;%s;%s;%s" % (
+                    for failure_message in job_type_section['failures']:
+                        failure = job_type_section['failures'][failure_message]
+                        print('%s;%s;%s;%s;%s;%s;%s' % (
                             revision_url,
                             job_type_name,
                             section_name,
-                            "failure",
+                            'failure',
                             failure_message,
-                            failure["count"],
-                            failure["failure_reproduced"]))
+                            failure['count'],
+                            failure['failure_reproduced']))
                 if args.include_tests:
-                    for test_name in job_type_section["tests"]:
-                        test = job_type_section["tests"][test_name]
-                        print("%s;%s;%s;%s;%s;%s;%s" % (
+                    for test_name in job_type_section['tests']:
+                        test = job_type_section['tests'][test_name]
+                        print('%s;%s;%s;%s;%s;%s;%s' % (
                             revision_url,
                             job_type_name,
                             section_name,
-                            "test",
+                            'test',
                             test_name,
-                            test["count"],
-                            test["test_reproduced"]))
+                            test['count'],
+                            test['test_reproduced']))
 
 
 def main():
@@ -529,53 +529,53 @@ Each argument and its value must be on separate lines in the file.
     )
 
     parser.add_argument(
-        "--cache",
-        default="/tmp/test_isolation_cache/",
-        help="Directory used to store cached objects retrieved from Bugzilla "
-        "and Treeherder.")
+        '--cache',
+        default='/tmp/test_isolation_cache/',
+        help='Directory used to store cached objects retrieved from Bugzilla '
+        'and Treeherder.')
 
     parser.add_argument(
         '--bug-creation-time',
-        help="Starting creation time in YYYY-MM-DD or "
-        "YYYY-MM-DDTHH:MM:SSTZ format. "
-        "Example 2019-07-27T17:28:00PDT or 2019-07-28T00:28:00Z'",
-        default="2019-06-14")
+        help='Starting creation time in YYYY-MM-DD or '
+        'YYYY-MM-DDTHH:MM:SSTZ format. '
+        'Example 2019-07-27T17:28:00PDT or 2019-07-28T00:28:00Z',
+        default='2019-06-14')
 
     parser.add_argument(
         '--bugs-after',
         type=int,
-        help="Only returns bugs whose id is greater than this integer.",
+        help='Only returns bugs whose id is greater than this integer.',
         default=0)
 
     parser.add_argument(
-        "--raw",
+        '--raw',
         action='store_true',
         default=False,
-        help="Do not reformat/indent json.")
+        help='Do not reformat/indent json.')
 
     parser.add_argument(
-        "--csv-summary",
+        '--csv-summary',
         action='store_true',
         default=False,
-        help="Output summary data in csv format. Does not include individual failures or tests.")
+        help='Output summary data in csv format. Does not include individual failures or tests.')
 
     parser.add_argument(
-        "--csv-results",
+        '--csv-results',
         action='store_true',
         default=False,
-        help="Output test data in csv format. Does not include individual failures.")
+        help='Output test data in csv format. Does not include individual failures.')
 
     parser.add_argument(
-        "--include-failures",
+        '--include-failures',
         action='store_true',
         default=False,
-        help="Include individual failures in output.")
+        help='Include individual failures in output.')
 
     parser.add_argument(
-        "--include-tests",
+        '--include-tests',
         action='store_true',
         default=False,
-        help="Include individual tests in output.")
+        help='Include individual tests in output.')
 
     parser.set_defaults(func=summarize_isolation_pushes_jobs_json)
 
@@ -583,7 +583,7 @@ Each argument and its value must be on separate lines in the file.
 
     logging.basicConfig(level=getattr(logging, args.log_level))
     logger = logging.getLogger()
-    logger.debug("main %s", args)
+    logger.debug('main %s', args)
 
     if not os.path.isdir(args.cache):
         os.makedirs(args.cache)
