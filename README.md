@@ -553,10 +553,11 @@ usage: summarize_isolation_pushes_jobs_json.py [-h]
                                                [--result RESULT]
                                                [--state STATE] [--tier TIER]
                                                [--cache CACHE]
+                                               [--reload-cache]
                                                [--bug-creation-time BUG_CREATION_TIME]
                                                [--bugs-after BUGS_AFTER]
-                                               [--raw] [--csv-summary]
-                                               [--csv-results]
+                                               [--bug BUG] [--raw]
+                                               [--csv-summary] [--csv-results]
                                                [--include-failures]
                                                [--include-tests]
 
@@ -623,10 +624,12 @@ optional arguments:
   --state STATE         Match job state regular expression: pending, running, completed. (default: None)
   --tier TIER           Match job tier regular expression. (default: None)
   --cache CACHE         Directory used to store cached objects retrieved from Bugzilla and Treeherder. (default: /tmp/test_isolation_cache/)
+  --reload-cache        Reload and save cached files. (default: False)
   --bug-creation-time BUG_CREATION_TIME
-                        Starting creation time in YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSTZ format. Example 2019-07-27T17:28:00PDT or 2019-07-28T00:28:00Z' (default: 2019-06-14)
+                        Starting creation time in YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSTZ format. Example 2019-07-27T17:28:00PDT or 2019-07-28T00:28:00Z (default: 2019-06-14)
   --bugs-after BUGS_AFTER
-                        Only returns bugs whose id is greater than this integer. (default: 0)
+                        Only returns bugs whose id is greater than this integer. (default: None)
+  --bug BUG             Only returns results for bug the specified bug. (default: None)
   --raw                 Do not reformat/indent json. (default: False)
   --csv-summary         Output summary data in csv format. Does not include individual failures or tests. (default: False)
   --csv-results         Output test data in csv format. Does not include individual failures. (default: False)
