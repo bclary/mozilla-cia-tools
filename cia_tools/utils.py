@@ -355,3 +355,7 @@ def query_tests(args, revision=""):
                            json.dumps(active_data_test, indent=2, sort_keys=True))
 
     return tests
+
+
+def ppjson(obj):
+    print(json.dumps(obj, indent=2))

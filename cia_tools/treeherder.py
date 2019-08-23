@@ -69,15 +69,7 @@ def get_pushes_jobs_json(args):
                 if job['result'] != 'testfailed':
                     job['bugzilla_suggestions'] = []
                     continue
-                bugzilla_suggestions_url = '%s/api/project/%s/jobs/%s/bug_suggestions/' % (
-                    (args.treeherder, args.repo, job['id']))
-                suggestions = utils.get_remote_json(bugzilla_suggestions_url)
-                if args.test_failure_pattern:
-                    job['bugzilla_suggestions'] = [
-                        suggestion for suggestion in suggestions
-                        if args.test_failure_pattern.search(suggestion['search'])]
-                else:
-                    job['bugzilla_suggestions'] = suggestions
+                job['bugzilla_suggestions'] = get_job_bugzilla_suggestions_json(args, args.repo, job['id'])
     return pushes
 
 
@@ -89,9 +81,9 @@ def get_pushes_jobs_job_details_json(args):
 
     """
     logger = logging.getLogger()
-
-    pushes = get_pushes_jobs_json(args)
     client = get_client(args)
+    pushes = get_pushes_jobs_json(args)
+
     for push in pushes:
         for job in push['jobs']:
             job['job_details'] = []
@@ -124,16 +116,25 @@ def get_job_by_repo_job_id_json(args, repo, job_id):
     Retrieve job given args, repo and job_id
 
     """
+    logger = logging.getLogger()
     client = get_client(args)
-    jobs = client.get_jobs(repo, id=job_id)
+
+    while True:
+        try:
+            jobs = client.get_jobs(repo, id=job_id)
+            break
+        except requests.exceptions.HTTPError as e:
+            if '503 Server Error' in e.message:
+                logger.exception('get_job_by_repo_job_id_json: retrying in 30 seconds.')
+                time.sleep(30)
 
     return jobs[0]
 
 
 def get_bug_job_map_json(args, repo, job_id):
-    """get_job_by_repo_job_id_json
+    """get_bug_job_map_json
 
-    Retrieve job given args, repo and job_id
+    Retrieve bug_job_map given args, repo and job_id
 
     """
     logger = logging.getLogger()
@@ -150,10 +151,47 @@ def get_bug_job_map_json(args, repo, job_id):
             if attempt != 2:
                 time.sleep(30)
     if attempt == 2:
-        logger.warning("Unable to get job_bug_map %s", bug_job_map_url)
+        logger.warning("Unable to get bug_job_map %s", bug_job_map_url)
         bug_job_map = None
 
     return bug_job_map
+
+
+def get_job_bugzilla_suggestions_json(args, repo, job_id, include_related_bugs=False):
+    """get_job_bugzilla_suggestions_json
+
+    Retrieve job_bugzilla_suggestions given args, and job_id
+
+    """
+    logger = logging.getLogger()
+    bugzilla_suggestions_url = '%s/api/project/%s/jobs/%s/bug_suggestions/' % (
+        (args.treeherder, repo, job_id))
+
+    # Attempt up to 3 times to work around connection failures.
+    for attempt in range(3):
+        try:
+            suggestions = utils.get_remote_json(bugzilla_suggestions_url)
+            break
+        except requests.exceptions.ConnectionError:
+            logger.exception('get_job_bugzilla_suggestions_json attempt %s', attempt)
+            if attempt != 2:
+                time.sleep(30)
+    if attempt == 2:
+        logger.warning("Unable to get job_bugzilla_suggestions %s", bugzilla_suggestions_url)
+        suggestions = []
+
+    if args.test_failure_pattern:
+        bugzilla_suggestions = [
+            suggestion for suggestion in suggestions
+            if args.test_failure_pattern.search(suggestion['search'])]
+    else:
+        bugzilla_suggestions = suggestions
+
+    if not include_related_bugs:
+        for bug_data in bugzilla_suggestions:
+            del bug_data['bugs']
+
+    return bugzilla_suggestions
 
 
 def get_failure_count_json(args, repo, bug_id, start_date, end_date):

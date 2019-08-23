@@ -22,17 +22,33 @@ from common_args import (
 )
 
 from treeherder import (
-    get_bug_job_map_json,
     get_client,
+    get_failure_count_json,
+    get_bug_job_map_json,
+    get_job_bugzilla_suggestions_json,
     get_job_by_repo_job_id_json,
     get_pushes_jobs_json,
-    get_failure_count_json,
     get_repositories,
     get_repository_by_id,
 )
 
 
 BUGZILLA_URL = 'https://bugzilla.mozilla.org/rest/'
+ORIGINAL_SECTIONS = ('original',)
+ISOLATION_SECTIONS = ('repeated', 'id', 'it')
+
+
+def convert_bug_summary_to_pattern(bug_summary):
+    parts = munge_failure(bug_summary).split(' | ')
+    for i in range(len(parts)):
+        parts[i] = re.escape(parts[i])
+    pattern = re.sub('<(test|random)>', '[^|]+', ' \\| '.join(parts))
+    if r'\ ==\ ' in pattern and 'Assertion failure:' not in pattern:
+        parts = pattern.split(r'\ ==\ ')
+        parts[0] = '.*' + parts[0]
+        parts[1] = '.*' + parts[1]
+        pattern = r'\ ==\ '.join(parts)
+    return pattern
 
 
 def get_test_isolation_bugzilla_data(args):
@@ -94,7 +110,8 @@ def get_test_isolation_bugzilla_data(args):
                 logger.error('Bugzilla({}): {}'.format(query2, response2))
                 return
 
-            bug_summary = response2['bugs'][0]['summary'].replace('Intermittent ', '')
+            bug_summary = munge_failure(response2['bugs'][0]['summary'])
+            test = get_test(bug_summary)
 
             query3 = BUGZILLA_URL + 'bug/%s/comment' % bug['id']
             response3 = utils.get_remote_json(query3)
@@ -117,9 +134,26 @@ def get_test_isolation_bugzilla_data(args):
                 if revision_url not in data:
                     data[revision_url] = []
 
+                new_args = copy.deepcopy(args)
+                new_args.revision_url = revision_url
+                (new_args.repo, _, new_args.revision) = new_args.revision_url.split('/')[-3:]
+                new_args.add_bugzilla_suggestions = True
+                new_args.state = 'completed'
+                new_args.job_type_name = '^test-'
+                new_args.test_failure_pattern = 'TEST-|PROCESS-CRASH|Assertion failure:'
+                jobs_args.compile_filters(new_args)
+
                 bug_data = {
                     'bug_id': bug['id'],
-                    'bug_summary': bug_summary
+                    'bug_summary': bug_summary,
+                    'test': test,
+                    'job_id': job_id,
+                    'push_id': push_id,
+                    'repository': repository['name'],
+                    'revision_url': revision_url,
+                    'bugzilla_suggestions': get_job_bugzilla_suggestions_json(new_args, new_args.repo, job_id),
+                    'bug_job_map': get_bug_job_map_json(new_args, new_args.repo, job_id),
+                    'pattern': convert_bug_summary_to_pattern(bug_summary),
                 }
 
                 data[revision_url].append(bug_data)
@@ -147,50 +181,75 @@ def get_test_isolation_bugzilla_data(args):
     return data
 
 
-def summarize_isolation_pushes_jobs_json(args):
-    failure_munge_res = [
-        re.compile(r'GECKO[(]([\d]+)[)] [|] '),
-        re.compile(r'PID ([\d]+) [|] '),
-    ]
-    def munge_failure(failure):
-        for r in failure_munge_res:
-            match = r.search(failure)
-            if match:
-                failure = failure.replace(match.group(1), '')
-        return failure
-    def get_test(failure):
-        try:
-            # Handle result | test | message and test | message
-            parts = failure.split(' | ')
-            return parts[len(parts) - 2]
-        except IndexError:
-            return failure
+failure_munge_res = [
+    (re.compile(r'Intermittent '), ''),
+    (re.compile(r'GECKO[^ ]+ [|] '), ''),
+    (re.compile(r'PID ([\d]+) [|] '), ''),
+    (re.compile(r'task_[0-9]+'), 'task_1234'),
+    (re.compile(r'file:/+'), '/'),
+    (re.compile(r'xpcshell-remote.ini:'), ''),
+    (re.compile(r'fission '), ''),
+    (re.compile(r'Tier 2 ', flags=re.IGNORECASE), '/'),
+    (re.compile(r'Z:/+', flags=re.IGNORECASE), '/'),
+]
 
+
+def munge_failure(failure):
+    for regx, replacement in failure_munge_res:
+        match = regx.search(failure)
+        if match:
+            failure = failure.replace(match.group(0), replacement)
+    return failure
+
+
+def get_test(failure):
+    # Handle failures:
+    # result | test | message
+    # test | message
+    # test
+
+    parts = failure.split(' | ')
+    lparts = len(parts)
+
+    if lparts >= 3:
+        # result | test | message
+        offset = 1
+    elif lparts == 2 and (failure.startswith('TEST-') or failure.startswith('PROCESS-')):
+        offset = 1
+    else:
+        # test | message or test
+        offset = 0
+    test = parts[offset]
+    if test == '<test>' and lparts > offset + 1:
+        test = parts[offset + 1]
+    elif ' == ' in test:
+        # Handle reftests
+        parts = test.split(' == ')
+        test = parts[0]
+
+    return test
+
+def summarize_isolation_pushes_jobs_json(args):
     pushes = []
 
-    isolation_data = get_test_isolation_bugzilla_data(args)
-    for revision_url in isolation_data:
-        revision_data = isolation_data[revision_url]
+    test_isolation_bugzilla_data = get_test_isolation_bugzilla_data(args)
+    for revision_url in test_isolation_bugzilla_data:
+        revision_data = test_isolation_bugzilla_data[revision_url]
         for revision_bug_data in revision_data:
+            if args.bug and args.bug != revision_bug_data['bug_id']:
+                # Skip if we requested a specific bug and this is not it.
+                continue
             revision_bug_data['bug_summary'] = munge_failure(revision_bug_data['bug_summary'])
             new_args = copy.deepcopy(args)
             new_args.revision_url = revision_url
             (new_args.repo, _, new_args.revision) = new_args.revision_url.split('/')[-3:]
             new_args.add_bugzilla_suggestions = True
             new_args.state = 'completed'
+            new_args.result = None
             new_args.job_type_name = '^test-'
-
-            #if args.test_failure_pattern:
-            #    pattern = args.test_failure_pattern
-            #else:
-            #    pattern_parts = revision_bug_data['bug_summary'].split(' | ')
-            #    for i in range(len(pattern_parts)):
-            #        pattern_parts[i] = re.escape(pattern_parts[i])
-            #    pattern = '|'.join(pattern_parts).replace('<[^>]+>', '[^|]+')
-            pattern = '(TEST-UNEXPECTED|PROCESS-CRASH|Assertion failure:)'
-            new_args.test_failure_pattern = pattern
-            revision_bug_data['pattern'] = pattern
+            new_args.test_failure_pattern = 'TEST-|PROCESS-CRASH|Assertion failure:'
             jobs_args.compile_filters(new_args)
+
             # Load the pushes/jobs data from cache if it exists.
             pushes_jobs_cache_dir = os.path.join(args.cache, new_args.repo)
             if not os.path.isdir(pushes_jobs_cache_dir):
@@ -206,7 +265,7 @@ def summarize_isolation_pushes_jobs_json(args):
 
             pushes.extend(new_pushes)
 
-    data = convert_pushes_to_isolation_data(args, pushes)
+    data = convert_pushes_to_test_isolation_bugzilla_data(args, pushes)
 
     summary = {}
 
@@ -214,117 +273,113 @@ def summarize_isolation_pushes_jobs_json(args):
 
         if revision_url not in summary:
             summary[revision_url] = {}
-        revision_summary = summary[revision_url]
+        summary_revision = summary[revision_url]
 
         job_type_names = sorted(data[revision_url].keys())
 
         for job_type_name in job_type_names:
-            if job_type_name not in revision_summary:
-                revision_summary[job_type_name] = job_type_summary = {}
+            if job_type_name not in summary_revision:
+                summary_revision[job_type_name] = summary_revision_job_type = {}
             job_type = data[revision_url][job_type_name]
 
-            if 'bugs' not in job_type_summary:
-                job_type_summary['bugs'] = copy.deepcopy(isolation_data[revision_url])
-                for bug in job_type_summary['bugs']:
-                    bug['reproduced'] = {
+            if 'bugzilla_data' not in summary_revision_job_type:
+                summary_revision_job_type['bugzilla_data'] = copy.deepcopy(test_isolation_bugzilla_data[revision_url])
+                for bug_data in summary_revision_job_type['bugzilla_data']:
+                    # bug_data['failure_reproduced'][section_name] counts the
+                    # number of times the original bug_summary failure
+                    # was seen in that section of jobs.
+                    bug_data['failure_reproduced'] = {
+                        'original': 0,
+                        'repeated': 0,
+                        'id': 0,
+                        'it': 0,
+                    }
+                    # bug_data['test_reproduced'][section_name] counts the
+                    # number of times the original bug_summary test
+                    # was seen in that section of jobs.
+                    bug_data['test_reproduced'] = {
                         'original': 0,
                         'repeated': 0,
                         'id': 0,
                         'it': 0,
                     }
 
-            for section_name in ('original', 'repeated', 'id', 'it'):
-                if section_name not in job_type_summary:
-                    job_type_summary[section_name] = job_type_section_summary = {}
-                    job_type_section_summary['failures'] = {}
-                    job_type_section_summary['tests'] = {}
+            for section_name in (ORIGINAL_SECTIONS + ISOLATION_SECTIONS):
+                if section_name not in summary_revision_job_type:
+                    summary_revision_job_type[section_name] = summary_revision_job_type_section = {}
+                    summary_revision_job_type_section['failures'] = {}
+                    summary_revision_job_type_section['tests'] = {}
+                    summary_revision_job_type_section['failure_reproduced'] = 0
+                    summary_revision_job_type_section['test_reproduced'] = 0
                     if section_name == 'original':
-                        job_type_section_summary['job_bug_map'] = []
-                section = job_type[section_name]
+                        summary_revision_job_type_section['bug_job_map'] = []
+                job_type_section = job_type[section_name]
                 run_time = 0
-                number_jobs_testfailed = 0
-                number_failures = 0
+                jobs_testfailed_count = 0
+                bugzilla_suggestions_count = 0
 
-                for job in section:
+                for job in job_type_section:
                     if section_name == 'original':
-                        job_type_section_summary['job_bug_map'].extend(job['job_bug_map'])
+                        summary_revision_job_type_section['bug_job_map'].extend(job['bug_job_map'])
                     run_time += job['end_timestamp'] - job['start_timestamp']
-                    number_jobs_testfailed += 1 if job['result'] == 'testfailed' else 0
-                    number_failures += len(job['bugzilla_suggestions'])
+                    jobs_testfailed_count += 1 if job['result'] == 'testfailed' else 0
+                    bugzilla_suggestions_count += len(job['bugzilla_suggestions'])
 
                     for bugzilla_suggestion in job['bugzilla_suggestions']:
+
                         failure = munge_failure(bugzilla_suggestion['search'])
-                        if failure not in job_type_section_summary['failures']:
-                            job_type_section_summary['failures'][failure] = {
+                        if failure not in summary_revision_job_type_section['failures']:
+                            summary_revision_job_type_section['failures'][failure] = {
                                 'count': 0,
                             }
-                            if section_name != 'original':
-                                job_type_section_summary['failures'][failure]['failure_reproduced'] = 0
-                        job_type_section_summary['failures'][failure]['count'] += 1
-                        for bug in job_type_summary['bugs']:
-                            if re.compile(bug['pattern']).search(failure):
-                                bug['reproduced'][section_name] += 1
+                            summary_revision_job_type_section['failures'][failure]['failure_reproduced'] = 0
 
-                for failure in job_type_section_summary['failures']:
-                    test = get_test(failure)
-                    if test not in job_type_section_summary['tests']:
-                        job_type_section_summary['tests'][test] = {
-                            'count': job_type_section_summary['failures'][failure]['count'],
-                        }
-                        if section_name != 'original':
-                            job_type_section_summary['tests'][test]['test_reproduced'] = job_type_section_summary['failures'][failure]['failure_reproduced']
-                job_type_section_summary['run_time'] = run_time
-                job_type_section_summary['jobs_failed'] = number_jobs_testfailed
-                job_type_section_summary['jobs_total'] = len(section)
-                job_type_section_summary['tests_failed'] = number_failures
-                if section_name != 'original':
-                    job_type_section_summary['failure_reproduced'] = 0
-                    job_type_section_summary['test_reproduced'] = 0
+                        summary_revision_job_type_section['failures'][failure]['count'] += 1
+                        for bug_data in summary_revision_job_type['bugzilla_data']:
+                            if re.compile(bug_data['pattern']).search(failure):
+                                bug_data['failure_reproduced'][section_name] += 1
+                                summary_revision_job_type_section['failures'][failure]['failure_reproduced'] += 1
+                                summary_revision_job_type_section['failure_reproduced'] += 1
 
-            job_type_original_summary = job_type_summary['original']
+                        test = get_test(failure)
+                        if test not in summary_revision_job_type_section['tests']:
+                            summary_revision_job_type_section['tests'][test] = {
+                                'count': 0,
+                            }
+                            summary_revision_job_type_section['tests'][test]['test_reproduced'] = 0
 
-            for section_name in ('repeated', 'id', 'it'):
-                job_type_section_summary = job_type_summary[section_name]
+                        summary_revision_job_type_section['tests'][test]['count'] += 1
+                        if test in bug_data['test']:
+                            bug_data['test_reproduced'][section_name] += 1
+                            summary_revision_job_type_section['tests'][test]['test_reproduced'] += 1
+                            summary_revision_job_type_section['test_reproduced'] += 1
 
-                for failure in job_type_section_summary['failures']:
-                    if failure in job_type_original_summary['failures']:
-                        count = job_type_section_summary['failures'][failure]['count']
-                        job_type_section_summary['failures'][failure]['failure_reproduced'] += count
-                        job_type_section_summary['failure_reproduced'] += count
+                summary_revision_job_type_section['run_time'] = run_time
+                summary_revision_job_type_section['jobs_testfailed'] = jobs_testfailed_count
+                summary_revision_job_type_section['jobs_total'] = len(job_type_section)
+                summary_revision_job_type_section['bugzilla_suggestions_count'] = bugzilla_suggestions_count
 
-                for test in job_type_section_summary['tests']:
-                    if test in job_type_original_summary['tests']:
-                        count = job_type_section_summary['tests'][test]['count']
-                        job_type_section_summary['tests'][test]['test_reproduced'] += count
-                        job_type_section_summary['test_reproduced'] += count
+            #job_type_original_summary = summary_revision_job_type['original']
 
-    if not args.include_failures:
-        # Remove failures lists from sections
-        for revision_url in summary:
-            revision_summary = summary[revision_url]
-            for job_type_name in revision_summary:
-                for section_name in revision_summary[job_type_name]:
-                    summary_section = revision_summary[job_type_name][section_name]
-                    if 'failures' in summary_section:
-                        del summary_section['failures']
-                    if 'failure_reproduced' in summary_section:
-                        del summary_section['failure_reproduced']
+            #for section_name in ISOLATION_SECTIONS:
+            #    summary_revision_job_type_section = summary_revision_job_type[section_name]
 
-    if not args.include_tests:
-        # Remove tests lists from sections
-        for revision_url in summary:
-            revision_summary = summary[revision_url]
-            for job_type_name in revision_summary:
-                for section_name in revision_summary[job_type_name]:
-                    summary_section = revision_summary[job_type_name][section_name]
-                    if 'tests' in summary_section:
-                        del summary_section['tests']
-                    if 'test_reproduced' in summary_section:
-                        del summary_section['test_reproduced']
+            #    for failure in summary_revision_job_type_section['failures']:
+            #        if failure in job_type_original_summary['failures']:
+            #            count = summary_revision_job_type_section['failures'][failure]['count']
+            #            summary_revision_job_type_section['failures'][failure]['failure_reproduced'] += count
+            #            summary_revision_job_type_section['failure_reproduced'] += count
+
+            #    for test in summary_revision_job_type_section['tests']:
+            #        if test in job_type_original_summary['tests']:
+            #            count = summary_revision_job_type_section['tests'][test]['count']
+            #            summary_revision_job_type_section['tests'][test]['test_reproduced'] += count
+            #            summary_revision_job_type_section['test_reproduced'] += count
+
     return summary
 
 
-def convert_pushes_to_isolation_data(args, pushes):
+def convert_pushes_to_test_isolation_bugzilla_data(args, pushes):
     """Take the push/job data, collecting the jobs which are related to
     test isolation (group symbol suffix -I) and organizing them in a
     dict according to.
@@ -393,9 +448,9 @@ def convert_pushes_to_isolation_data(args, pushes):
             isolation_group = is_isolation_job_group_symbol(job_group_symbol)
             if isolation_type is None and isolation_group is None:
                 data_job_type['original'].append(job)
-                # Add the job_bug_map object to the original job
+                # Add the bug_job_map object to the original job
                 # in order to track which bug was "isolated".
-                job['job_bug_map'] = get_bug_job_map_json(args, repository['name'], job['id'])
+                job['bug_job_map'] = get_bug_job_map_json(args, repository['name'], job['id'])
             elif isolation_type == 'id':
                 data_job_type['id'].append(job)
             elif isolation_type == 'it':
@@ -416,9 +471,9 @@ def output_csv_summary(args, summary):
 
     line += 'bugmap;'
 
-    properties = ('run_time', 'jobs_total', 'jobs_failed', 'tests_failed')
+    properties = ('run_time', 'jobs_total', 'jobs_testfailed', 'bugzilla_suggestions_count')
 
-    for section_name in ('repeated', 'id', 'it'):
+    for section_name in (ORIGINAL_SECTIONS + ISOLATION_SECTIONS):
         for property_name in properties:
             line += '%s.%s;' % (section_name, property_name)
         if args.include_failures:
@@ -430,15 +485,15 @@ def output_csv_summary(args, summary):
     print(line)
 
     for revision_url in summary:
-        revision_summary = summary[revision_url]
-        for job_type_name in revision_summary:
-            job_type_summary = revision_summary[job_type_name]
-            for bug in job_type_summary['bugs']:
-                bug_id = bug['bug_id']
-                bug_summary = bug['bug_summary'].replace(';', ' ')
-                failure_count = bug['failure_count']
-                job_bug_map = revision_summary[job_type_name]['original']['job_bug_map']
-                bugs = ' '.join(sorted(set([ str(job_bug['bug_id']) for job_bug in job_bug_map ])))
+        summary_revision = summary[revision_url]
+        for job_type_name in summary_revision:
+            summary_revision_job_type = summary_revision[job_type_name]
+            for bug_data in summary_revision_job_type['bugzilla_data']:
+                bug_id = bug_data['bug_id']
+                bug_summary = bug_data['bug_summary'].replace(';', ' ')
+                failure_count = bug_data['failure_count']
+                bug_job_map = summary_revision[job_type_name]['original']['bug_job_map']
+                bugs = ','.join(sorted(set([ str(job_bug['bug_id']) for job_bug in bug_job_map ])))
                 if str(bug_id) not in bugs:
                     # Ignore other bugs filed for this revision if they are not in the
                     # current job bug map.
@@ -446,20 +501,19 @@ def output_csv_summary(args, summary):
                 line = '%s;%s;%s;%s;%s;' % (
                     revision_url, job_type_name, bug_id, bug_summary, failure_count)
 
-                for section_name in ('original', 'repeated', 'id', 'it'):
-                    line += '%s;' % bug['reproduced'][section_name]
+                for section_name in (ORIGINAL_SECTIONS + ISOLATION_SECTIONS):
+                    line += '%s;' % bug_data['failure_reproduced'][section_name]
 
                 line += '%s;' % bugs
 
-                for section_name in ('repeated', 'id', 'it'):
-                    job_type_section = job_type_summary[section_name]
+                for section_name in (ORIGINAL_SECTIONS + ISOLATION_SECTIONS):
+                    summary_revision_job_type_section = summary_revision_job_type[section_name]
                     for property_name in properties:
-                        line += '%s;' % job_type_section[property_name]
-                    if section_name != 'original':
-                        if args.include_failures:
-                            line += '%s;' % job_type_section['failure_reproduced']
-                        if args.include_tests:
-                            line += '%s;' % job_type_section['test_reproduced']
+                        line += '%s;' % summary_revision_job_type_section[property_name]
+                    if args.include_failures:
+                        line += '%s;' % summary_revision_job_type_section['failure_reproduced']
+                    if args.include_tests:
+                        line += '%s;' % summary_revision_job_type_section['test_reproduced']
                 line = line[0:-1]
                 print(line)
 
@@ -468,15 +522,15 @@ def output_csv_results(args, summary):
     print('revision;job_type_name;section;result_type;result_name;count;reproduced')
 
     for revision_url in summary:
-        revision_summary = summary[revision_url]
-        for job_type_name in revision_summary:
-            job_type_summary = revision_summary[job_type_name]
+        summary_revision = summary[revision_url]
+        for job_type_name in summary_revision:
+            summary_revision_job_type = summary_revision[job_type_name]
 
-            for section_name in ('repeated', 'id', 'it'):
-                job_type_section = job_type_summary[section_name]
+            for section_name in ISOLATION_SECTIONS:
+                summary_revision_job_type_section = summary_revision_job_type[section_name]
                 if args.include_failures:
-                    for failure_message in job_type_section['failures']:
-                        failure = job_type_section['failures'][failure_message]
+                    for failure_message in summary_revision_job_type_section['failures']:
+                        failure = summary_revision_job_type_section['failures'][failure_message]
                         print('%s;%s;%s;%s;%s;%s;%s' % (
                             revision_url,
                             job_type_name,
@@ -486,8 +540,8 @@ def output_csv_results(args, summary):
                             failure['count'],
                             failure['failure_reproduced']))
                 if args.include_tests:
-                    for test_name in job_type_section['tests']:
-                        test = job_type_section['tests'][test_name]
+                    for test_name in summary_revision_job_type_section['tests']:
+                        test = summary_revision_job_type_section['tests'][test_name]
                         print('%s;%s;%s;%s;%s;%s;%s' % (
                             revision_url,
                             job_type_name,
