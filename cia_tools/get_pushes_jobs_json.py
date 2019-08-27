@@ -11,7 +11,7 @@ import argparse
 import json
 import logging
 
-from treeherder import get_pushes_jobs_json
+from treeherder import get_pushes_jobs_json, init_treeherder
 from common_args import (ArgumentFormatter, log_level_args,
                          treeherder_urls_args, pushes_args, jobs_args)
 
@@ -64,10 +64,13 @@ Each argument and its value must be on separate lines in the file.
 
     args = parser.parse_args()
 
+    init_treeherder(args.treeherder_url)
+
     if args.revision_url:
         (args.repo, _, args.revision) = args.revision_url.split('/')[-3:]
 
 
+    pushes_args.compile_filters(args)
     jobs_args.compile_filters(args)
 
     logging.basicConfig(level=getattr(logging, args.log_level))

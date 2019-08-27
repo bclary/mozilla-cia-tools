@@ -20,7 +20,7 @@ import re
 
 import utils
 
-from treeherder import get_pushes_json
+from treeherder import get_pushes_json, init_treeherder
 
 from common_args import (ArgumentFormatter, log_level_args, pushes_args,
                          treeherder_urls_args, activedata_urls_args)
@@ -95,7 +95,7 @@ def compare_tests(args):
     logger.debug('compare_tests args %s', args)
 
     data = {}
-    pushes = get_pushes_json(args)
+    pushes = get_pushes_json(args, args.repo)
 
     if not pushes:
         logger.warning("compare_tests: no pushes found.")
@@ -215,6 +215,8 @@ and its value must be on separate lines in the file.
     parser.set_defaults(func=compare_tests)
 
     args = parser.parse_args()
+
+    init_treeherder(args.treeherder_url)
 
     logging.basicConfig(level=getattr(logging, args.log_level))
     logger = logging.getLogger()

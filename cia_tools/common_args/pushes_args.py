@@ -4,6 +4,7 @@ see PushViewSet in https://github.com/mozilla/treeherder/blob/master/treeherder/
 """
 
 import argparse
+import re
 
 
 def get_parser():
@@ -28,10 +29,21 @@ If a push isn't selected, the most recent push will be returned.
         help="repository name to query.")
 
     parser.add_argument(
+        "--push_id",
+        type=int,
+        default=None,
+        help="Push id.")
+
+    parser.add_argument(
         "--author",
         default=None,
         help="Push author email. Should be specified if --repo is try and more\n"
         "than one revision is selected.")
+
+    parser.add_argument(
+        "--comments",
+        default=None,
+        help="Push comments pattern.")
 
     range_group = parser.add_mutually_exclusive_group(
         required=False)
@@ -62,3 +74,22 @@ If a push isn't selected, the most recent push will be returned.
         help="Push revision range fromchange-tochange.")
 
     return parser
+
+def compile_filters(args):
+    """compile_filters
+
+    :param: args - argparse.Namespace returned from argparse parse_args.
+
+    Convert push filter regular expression patterns to regular
+    expressions and attach to a `push_filters` dict on the args object.
+
+    """
+    filter_names = ("comments",)
+    if not hasattr(args, 'push_filters'):
+        args.push_filters = {}
+    if not hasattr(args, 'push_filters'):
+        args.push_filters = {}
+    for filter_name in filter_names:
+        filter_value = getattr(args, filter_name)
+        if filter_value:
+            args.push_filters[filter_name] = re.compile(filter_value, flags=re.MULTILINE)

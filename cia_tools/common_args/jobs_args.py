@@ -101,7 +101,7 @@ def compile_filters(args):
     :param: args - argparse.Namespace returned from argparse parse_args.
 
     Convert job filter regular expression patterns to regular
-    expressions and attach to a `filters` dict on the args object.
+    expressions and attach to a `job_filters` dict on the args object.
 
     """
     filter_names = ("build_platform",
@@ -115,11 +115,12 @@ def compile_filters(args):
                     "result",
                     "state",
                     "tier",)
-    args.filters = {}
+    if not hasattr(args, 'job_filters'):
+        args.job_filters = {}
     for filter_name in filter_names:
         filter_value = getattr(args, filter_name)
         if filter_value:
-            args.filters[filter_name] = re.compile(filter_value)
+            args.job_filters[filter_name] = re.compile(filter_value)
 
     if args.test_failure_pattern:
         args.test_failure_pattern = re.compile(args.test_failure_pattern)

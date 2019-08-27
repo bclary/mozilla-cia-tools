@@ -11,11 +11,11 @@ import utils
 
 from common_args import (ArgumentFormatter, log_level_args, pushes_args,
                          treeherder_urls_args, activedata_urls_args)
-from treeherder import get_pushes_json
+from treeherder import get_pushes_json, init_treeherder
 
 def query_tests(args):
     tests = []
-    pushes = get_pushes_json(args)
+    pushes = get_pushes_json(args, args.repo)
     for push in pushes:
         tests.extend(utils.query_tests(args, revision=push['revision']))
     return tests
@@ -70,6 +70,8 @@ and its value must be on separate lines in the file.
     parser.set_defaults(func=query_tests)
 
     args = parser.parse_args()
+
+    init_treeherder(args.treeherder_url)
 
     logging.basicConfig(level=getattr(logging, args.log_level))
 

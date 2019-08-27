@@ -13,7 +13,7 @@ import logging
 
 from common_args import (ArgumentFormatter, jobs_args, log_level_args, pushes_args,
                          treeherder_urls_args)
-from treeherder import get_pushes_jobs_job_details_json
+from treeherder import get_pushes_jobs_job_details_json, init_treeherder
 
 
 def main():
@@ -68,9 +68,12 @@ Each argument and its value must be on separate lines in the file.
 
     args = parser.parse_args()
 
+    init_treeherder(args.treeherder_url)
+
     if args.revision_url:
         (args.repo, _, args.revision) = args.revision_url.split('/')[-3:]
 
+    pushes_args.compile_filters(args)
     jobs_args.compile_filters(args)
 
     logging.basicConfig(level=getattr(logging, args.log_level))

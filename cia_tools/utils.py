@@ -17,33 +17,76 @@ from urllib.parse import urlparse
 
 import requests
 
-USER_AGENT = "mozilla-cia-tools"
+logger = logging.getLogger(__name__)
+TEXT = 'text/plain'
+JSON = 'application/json'
+BINARY = 'application/octet-stream'
 
-def get_treeherder_push_params(args):
-    """
-    get_treeherder_push_params
-    """
-    params = {}
-    if args.date_range:
-        params = dict(zip(('startdate', 'enddate'), args.date_range.split()))
-    elif args.revision:
-        params = {'revision': args.revision}
-    elif args.revision_range:
-        (fromchange, tochange) = args.revision_range.split('-')
-        params = {'fromchange': fromchange, 'tochange': tochange}
-    elif args.commit_revision:
-        params = {'commit_revision': args.commit_revision}
-    if args.author:
-        params['author'] = args.author
-    # limit the response if no arguments given.
-    if not params:
-        params['count'] = 1
-    else:
-        params['count'] = None
-    return params
+class RequestsWrapper(object):
 
 
-def get_remote_text(url, params=None):
+    def __init__(self):
+        # From Treeherder client
+        # Using a session gives us automatic keep-alive/connection pooling.
+        self._user_agent = 'mozilla-cia-tools/0.0.1'
+        self.headers = {
+            TEXT: {
+                'Accept': TEXT,
+                'User-Agent': self._user_agent,
+            },
+            JSON: {
+                'Accept': JSON,
+                'User-Agent': self._user_agent,
+            },
+            BINARY: {
+                'Accept': BINARY,
+                'User-Agent': self._user_agent,
+            },
+        }
+        self.session = requests.Session()
+
+    def _get(self, url, mimetype='application/octet-stream', stream=False, **params):
+
+        headers = self.headers.get(mimetype, {})
+        while True:
+            try:
+                response = self.session.get(url, headers=headers, stream=stream, **params)
+                if response.ok:
+                    break
+                if response.status_code == 503:
+                    logger.error('HTTP 503 Server too busy. Will retry {}.'.format(url))
+                else:
+                    response.raise_for_status()
+            except (requests.ConnectionError, requests.ConnectTimeout):
+                logger.error('Will retry {}'.format(url), exc_info=1)
+            # Wait and try again.
+            time.sleep(60 + random.randrange(0, 30, 1))
+
+        return response
+
+    def _post(self, url, data=None, stream=False, **params):
+
+        headers = {'user-agent': self._user_agent}
+        while True:
+            try:
+                response = self.session.post(url, headers=headers, stream=stream, **params)
+                if response.ok:
+                    break
+                if response.status_code == 503:
+                    logger.error('HTTP 503 Server too busy. Will retry {}.'.format(url))
+                else:
+                    response.raise_for_status()
+            except (requests.ConnectionError, requests.ConnectTimeout):
+                logger.error('Will retry {}'.format(url), exc_info=1)
+            # Wait and try again.
+            time.sleep(60 + random.randrange(0, 30, 1))
+
+        return response
+
+
+requestswrapper = RequestsWrapper()
+
+def get_remote_text(url, stream=False, params=None):
     """Return the string containing the contents of a url if the
     request is successful, otherwise return None. Works with remote
     and local files.
@@ -51,51 +94,36 @@ def get_remote_text(url, params=None):
     :param url: url of content to be retrieved.
     :param: params: dict of query terms.
     """
-    logger = logging.getLogger()
 
-    try:
-        parse_result = urlparse(url)
-        if not parse_result.scheme or parse_result.scheme.startswith('file'):
-            local_file = open(parse_result.path)
-            with local_file:
-                return local_file.read()
+    parse_result = urlparse(url)
+    if not parse_result.scheme or parse_result.scheme.startswith('file'):
+        local_file = open(parse_result.path)
+        with local_file:
+            return local_file.read()
 
-        while True:
-            try:
-                req = requests.get(url, params=params, headers={'user-agent': USER_AGENT})
-                if req.ok:
-                    return req.text
-                if req.status_code != 503:
-                    logger.warning("Unable to open url %s : %s",
-                                   url, req.reason)
-                    return None
-                # Server is too busy.
-                # See https://bugzilla.mozilla.org/show_bug.cgi?id=1146983#c10
-                logger.warning("HTTP 503 Server Too Busy: url %s", url)
-            except requests.exceptions.ConnectionError as err:
-                logger.warning("ConnectionError: %s. Will retry...", err)
-
-            # Wait and try again.
-            time.sleep(60 + random.randrange(0, 30, 1))
-    except requests.exceptions.RequestException:
-        logger.exception('Unable to open %s', url)
-
+    response = requestswrapper._get(url, mimetype=TEXT, stream=stream, **params)
+    if response.ok:
+        return response.text
     return None
 
 
-def get_remote_json(url, params=None):
+def get_remote_json(url, stream=False, params=None):
     """Return the json representation of the contents of a remote url if
     the HTTP response code is 200, otherwise return None.
 
     :param url: url of content to be retrieved.
     :param: params: dict of query terms.
     """
-    logger = logging.getLogger()
-    content = get_remote_text(url, params=params)
-    if content:
-        content = json.loads(content)
-    logger.debug('get_remote_json(%s): %s', url, content)
-    return content
+    parse_result = urlparse(url)
+    if not parse_result.scheme or parse_result.scheme.startswith('file'):
+        local_file = open(parse_result.path)
+        with local_file:
+            return json.loads(local_file.read())
+
+    response = requestswrapper._get(url, mimetype=JSON, stream=stream, params=params)
+    if response.ok:
+        return response.json()
+    return None
 
 
 # download_file() cloned from autophone's urlretrieve()
@@ -110,7 +138,6 @@ def download_file(url, dest, params=None, max_attempts=3):
     :max_attempts: integer number of times to attempt download.
                    Defaults to 3.
     """
-    logger = logging.getLogger()
     parse_result = urlparse(url)
     if not parse_result.scheme or parse_result.scheme.startswith('file'):
         local_file = open(parse_result.path)
@@ -125,20 +152,18 @@ def download_file(url, dest, params=None, max_attempts=3):
 
     for attempt in range(max_attempts):
         try:
-            req = requests.get(url, stream=True)
-            if not req.ok:
-                req.raise_for_status()
+            response = requestswrapper.get(url, mimetype=BINARY, stream=True, params=params)
             with open(dest, 'wb') as dest_file:
-                for chunk in req.iter_content(chunk_size=10485760):
+                for chunk in response.iter_content(chunk_size=10485760):
                     dest_file.write(chunk)
             break
         except requests.exceptions.HTTPError as http_error:
-            logger.error("download_file(%s, %s) %s", url, dest, http_error)
+            logger.error("download_file(%s, %s) %s", url, dest, http_error, exc_info=1)
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as err:
             logger.warning("utils.download_file: %s: Attempt %s: %s",
                            url, attempt, err)
             if attempt == max_attempts - 1:
-                logger.error("utils.download_file: %s: giving up", url)
+                logger.error("utils.download_file: %s: giving up", url, exc_info=1)
                 return
             # Wait and try again.
             time.sleep(60 + random.randrange(0, 30, 1))
@@ -164,7 +189,6 @@ def merge_dicts(left, right):
     dict schema  { 'key': {'sub_key': integer}}
 
     """
-    logger = logging.getLogger()
     logger.debug("merge_dicts: left=%s, right=%s", left, right)
     result = copy.deepcopy(left)
     for key in right.keys():
@@ -183,46 +207,28 @@ def query_active_data(args, query_json, limit=10):
     """
     docstring
     """
-    logger = logging.getLogger()
     if "limit" not in query_json:
         query_json["limit"] = limit
 
     logger.debug("query_active_data\n%s",
                  json.dumps(query_json, indent=2, sort_keys=True))
 
+    result = None
     query = json.dumps(query_json)
-    while True:
+    response = requestswrapper._post(args.activedata, data=query, stream=True)
+
+    if not response.ok:
+        logger.warning("Unable to open url %s : %s", args.activedata, response.reason)
+    else:
         try:
-            req = requests.post(args.activedata, data=query, stream=True,
-                                headers={'user-agent': USER_AGENT})
-            if req.ok:
-                try:
-                    result_json = req.json()
-                    if len(result_json["data"]) == limit:
-                        logger.warning("query_active_data(%s,%s) returned limit.",
-                                       query_json, limit)
-                    return result_json
-                except ValueError:
-                    logger.error('ActiveData reponse not json %s', req.text)
-                    return None
-            elif req.status_code == 503:
-                # Server is too busy.
-                # See https://bugzilla.mozilla.org/show_bug.cgi?id=1146983#c10
-                logger.warning("HTTP 503 Server Too Busy: url %s", args.activedata)
-            else:
-                logger.warning("Unable to open url %s : %s",
-                               args.activedata, req.reason)
-                return None
-        except requests.exceptions.ConnectionError as err:
-            logger.warning("ConnectionError: %s. Will retry...", err)
-        except requests.exceptions.RequestException:
-            logger.exception('Unable to open %s', args.activedata)
-            break
+            result = response.json()
+            if len(result["data"]) == limit:
+                logger.warning("query_active_data(%s,%s) returned limit.",
+                               query_json, limit)
+        except ValueError:
+            logger.error('ActiveData reponse not json %s', response.text)
 
-        # Wait and try again.
-        time.sleep(60 + random.randrange(0, 30, 1))
-
-    return None
+    return result
 
 
 def query_tests(args, revision=""):
@@ -230,7 +236,6 @@ def query_tests(args, revision=""):
     branch and revision. If all is True, return
     all tests otherwise only return test failures.
     """
-    logger = logging.getLogger()
     query_json = {
         "from": "unittest",
         "where": {

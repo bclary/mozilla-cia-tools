@@ -18,12 +18,14 @@ pip install -r requirements.txt
 
 ``` shell
 $ ./activedata_compare_tests.py --help
+
 usage: activedata_compare_tests.py [-h]
                                    [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
-                                   [--repo {mozilla-central,autoland,inbound,try,mozilla-beta,mozilla-release}]
-                                   [--author AUTHOR]
+                                   [--repo {mozilla-central,autoland,mozilla-inbound,try,mozilla-beta,mozilla-release,mozilla-esr68}]
+                                   [--push_id PUSH_ID] [--author AUTHOR]
+                                   [--comments COMMENTS]
                                    [--date-range DATE_RANGE | --revision REVISION | --commit-revision COMMIT_REVISION | --revision-url REVISION_URL | --revision-range REVISION_RANGE]
-                                   [--treeherder TREEHERDER]
+                                   [--treeherder-url TREEHERDER_URL]
                                    [--activedata ACTIVEDATA]
                                    [--combine-chunks]
                                    [--output-push-differences-only]
@@ -38,10 +40,12 @@ optional arguments:
   -h, --help            show this help message and exit
   --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
                         Logging level. (default: INFO)
-  --repo {mozilla-central,autoland,inbound,try,mozilla-beta,mozilla-release}
+  --repo {mozilla-central,autoland,mozilla-inbound,try,mozilla-beta,mozilla-release,mozilla-esr68}
                         repository name to query. (default: mozilla-central)
+  --push_id PUSH_ID     Push id. (default: None)
   --author AUTHOR       Push author email. Should be specified if --repo is try and more
                         than one revision is selected. (default: None)
+  --comments COMMENTS   Push comments pattern. (default: None)
   --date-range DATE_RANGE
                         Push date range startdate enddate CCYY-MM-DD CCYY-MM-DD. (default: None)
   --revision REVISION   Push Revision. (default: None)
@@ -51,7 +55,7 @@ optional arguments:
                         Url to push revision which can be used in place of --repo and --revision. (default: None)
   --revision-range REVISION_RANGE
                         Push revision range fromchange-tochange. (default: None)
-  --treeherder TREEHERDER
+  --treeherder-url TREEHERDER_URL
                         Treeherder url. (default: https://treeherder.mozilla.org)
   --activedata ACTIVEDATA
                         ActiveData url. (default: https://activedata.allizom.org/query)
@@ -70,8 +74,11 @@ and its value must be on separate lines in the file.
 
 ### activedata_query.py
 
+writes results of ActiveData query in json format to stdout.
+
 ``` shell
 $ ./activedata_query.py --help
+
 usage: activedata_query.py [-h]
                            [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
                            [--activedata ACTIVEDATA] --file FILE [--raw]
@@ -94,18 +101,18 @@ into the command line through the use of the @ syntax. Each argument
 and its value must be on separate lines in the file.
 ```
 
-writes results of ActiveData query in json format to stdout.
-
 ### activedata_query_tests.py
 
 ``` shell
 $ ./activedata_query_tests.py --help
+
 usage: activedata_query_tests.py [-h]
                                  [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
-                                 [--repo {mozilla-central,autoland,inbound,try,mozilla-beta,mozilla-release}]
-                                 [--author AUTHOR]
+                                 [--repo {mozilla-central,autoland,mozilla-inbound,try,mozilla-beta,mozilla-release,mozilla-esr68}]
+                                 [--push_id PUSH_ID] [--author AUTHOR]
+                                 [--comments COMMENTS]
                                  [--date-range DATE_RANGE | --revision REVISION | --commit-revision COMMIT_REVISION | --revision-url REVISION_URL | --revision-range REVISION_RANGE]
-                                 [--treeherder TREEHERDER]
+                                 [--treeherder-url TREEHERDER_URL]
                                  [--activedata ACTIVEDATA]
                                  [--include-passing-tests] [--raw]
 
@@ -123,10 +130,12 @@ optional arguments:
   -h, --help            show this help message and exit
   --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
                         Logging level. (default: INFO)
-  --repo {mozilla-central,autoland,inbound,try,mozilla-beta,mozilla-release}
+  --repo {mozilla-central,autoland,mozilla-inbound,try,mozilla-beta,mozilla-release,mozilla-esr68}
                         repository name to query. (default: mozilla-central)
+  --push_id PUSH_ID     Push id. (default: None)
   --author AUTHOR       Push author email. Should be specified if --repo is try and more
                         than one revision is selected. (default: None)
+  --comments COMMENTS   Push comments pattern. (default: None)
   --date-range DATE_RANGE
                         Push date range startdate enddate CCYY-MM-DD CCYY-MM-DD. (default: None)
   --revision REVISION   Push Revision. (default: None)
@@ -136,7 +145,7 @@ optional arguments:
                         Url to push revision which can be used in place of --repo and --revision. (default: None)
   --revision-range REVISION_RANGE
                         Push revision range fromchange-tochange. (default: None)
-  --treeherder TREEHERDER
+  --treeherder-url TREEHERDER_URL
                         Treeherder url. (default: https://treeherder.mozilla.org)
   --activedata ACTIVEDATA
                         ActiveData url. (default: https://activedata.allizom.org/query)
@@ -155,6 +164,7 @@ and its value must be on separate lines in the file.
 
 ``` shell
 $ ./analyze_logs.py --help
+
 usage: analyze_logs.py [-h] [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
                        --path PATH [--filename FILENAME] [--include-tests]
                        [--dechunk] [--raw]
@@ -183,6 +193,7 @@ Each argument and its value must be on separate lines in the file.
 
 ``` shell
 $ ./combine_logs_json.py --help
+
 usage: combine_logs_json.py [-h] [--file FILES] [--alias ALIASES]
                             [--differences] [--ignore IGNORE]
                             [--munge-test-data]
@@ -207,12 +218,16 @@ and its value must be on separate lines in the file.
 ### download_treeherder_jobdetails.py
 
 ``` shell
+$ ./download_treeherder_jobdetails.py --help
+
 usage: download_treeherder_jobdetails.py [-h]
                                          [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
-                                         [--repo {mozilla-central,autoland,inbound,try,mozilla-beta,mozilla-release}]
-                                         [--author AUTHOR]
+                                         [--repo {mozilla-central,autoland,mozilla-inbound,try,mozilla-beta,mozilla-release,mozilla-esr68}]
+                                         [--push_id PUSH_ID] [--author AUTHOR]
+                                         [--comments COMMENTS]
                                          [--date-range DATE_RANGE | --revision REVISION | --commit-revision COMMIT_REVISION | --revision-url REVISION_URL | --revision-range REVISION_RANGE]
                                          [--add-bugzilla-suggestions]
+                                         [--test-failure-pattern TEST_FAILURE_PATTERN]
                                          [--build-platform BUILD_PLATFORM]
                                          [--job-group-name JOB_GROUP_NAME]
                                          [--job-group-symbol JOB_GROUP_SYMBOL]
@@ -223,7 +238,7 @@ usage: download_treeherder_jobdetails.py [-h]
                                          [--platform-option PLATFORM_OPTION]
                                          [--result RESULT] [--state STATE]
                                          [--tier TIER]
-                                         [--treeherder TREEHERDER]
+                                         [--treeherder-url TREEHERDER_URL]
                                          --download-job-details
                                          DOWNLOAD_JOB_DETAILS
                                          [--output OUTPUT] [--alias ALIAS]
@@ -254,10 +269,12 @@ optional arguments:
   -h, --help            show this help message and exit
   --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
                         Logging level. (default: INFO)
-  --repo {mozilla-central,autoland,inbound,try,mozilla-beta,mozilla-release}
+  --repo {mozilla-central,autoland,mozilla-inbound,try,mozilla-beta,mozilla-release,mozilla-esr68}
                         repository name to query. (default: mozilla-central)
+  --push_id PUSH_ID     Push id. (default: None)
   --author AUTHOR       Push author email. Should be specified if --repo is try and more
                         than one revision is selected. (default: None)
+  --comments COMMENTS   Push comments pattern. (default: None)
   --date-range DATE_RANGE
                         Push date range startdate enddate CCYY-MM-DD CCYY-MM-DD. (default: None)
   --revision REVISION   Push Revision. (default: None)
@@ -269,6 +286,8 @@ optional arguments:
                         Push revision range fromchange-tochange. (default: None)
   --add-bugzilla-suggestions
                         Add bugzilla suggestions to job objects. (default: False)
+  --test-failure-pattern TEST_FAILURE_PATTERN
+                        Include failures from bugzilla suggestions matching this regular expression. (default: None)
   --build-platform BUILD_PLATFORM
                         Match job build platform regular expression. (default: None)
   --job-group-name JOB_GROUP_NAME
@@ -287,7 +306,7 @@ optional arguments:
   --result RESULT       Match job result regular expression: unknown, success, testfailed, .... (default: None)
   --state STATE         Match job state regular expression: pending, running, completed. (default: None)
   --tier TIER           Match job tier regular expression. (default: None)
-  --treeherder TREEHERDER
+  --treeherder-url TREEHERDER_URL
                         Treeherder url. (default: https://treeherder.mozilla.org)
   --download-job-details DOWNLOAD_JOB_DETAILS
                         Regular expression matching Job details url basenames to be
@@ -312,7 +331,9 @@ Each argument and its value must be on separate lines in the file.
 usage: get_pushes_jobs_job_details_json.py [-h]
                                            [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
                                            [--repo {mozilla-central,autoland,mozilla-inbound,try,mozilla-beta,mozilla-release,mozilla-esr68}]
+                                           [--push_id PUSH_ID]
                                            [--author AUTHOR]
+                                           [--comments COMMENTS]
                                            [--date-range DATE_RANGE | --revision REVISION | --commit-revision COMMIT_REVISION | --revision-url REVISION_URL | --revision-range REVISION_RANGE]
                                            [--add-bugzilla-suggestions]
                                            [--test-failure-pattern TEST_FAILURE_PATTERN]
@@ -326,7 +347,7 @@ usage: get_pushes_jobs_job_details_json.py [-h]
                                            [--platform-option PLATFORM_OPTION]
                                            [--result RESULT] [--state STATE]
                                            [--tier TIER]
-                                           [--treeherder TREEHERDER]
+                                           [--treeherder-url TREEHERDER_URL]
                                            [--add-resource-usage] [--raw]
 
 Downloads pushes, jobs and job details data from Treeherder, writing results as
@@ -347,8 +368,10 @@ optional arguments:
                         Logging level. (default: INFO)
   --repo {mozilla-central,autoland,mozilla-inbound,try,mozilla-beta,mozilla-release,mozilla-esr68}
                         repository name to query. (default: mozilla-central)
+  --push_id PUSH_ID     Push id. (default: None)
   --author AUTHOR       Push author email. Should be specified if --repo is try and more
                         than one revision is selected. (default: None)
+  --comments COMMENTS   Push comments pattern. (default: None)
   --date-range DATE_RANGE
                         Push date range startdate enddate CCYY-MM-DD CCYY-MM-DD. (default: None)
   --revision REVISION   Push Revision. (default: None)
@@ -380,7 +403,7 @@ optional arguments:
   --result RESULT       Match job result regular expression: unknown, success, testfailed, .... (default: None)
   --state STATE         Match job state regular expression: pending, running, completed. (default: None)
   --tier TIER           Match job tier regular expression. (default: None)
-  --treeherder TREEHERDER
+  --treeherder-url TREEHERDER_URL
                         Treeherder url. (default: https://treeherder.mozilla.org)
   --add-resource-usage  Download resource-usage.json job detail and add to job object. (default: False)
   --raw                 Do not reformat/indent json. (default: False)
@@ -400,10 +423,11 @@ Each argument and its value must be on separate lines in the file.
 
 usage: get_pushes_json.py [-h]
                           [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
-                          [--repo {mozilla-central,autoland,inbound,try,mozilla-beta,mozilla-release}]
-                          [--author AUTHOR]
+                          [--repo {mozilla-central,autoland,mozilla-inbound,try,mozilla-beta,mozilla-release,mozilla-esr68}]
+                          [--push_id PUSH_ID] [--author AUTHOR]
+                          [--comments COMMENTS]
                           [--date-range DATE_RANGE | --revision REVISION | --commit-revision COMMIT_REVISION | --revision-url REVISION_URL | --revision-range REVISION_RANGE]
-                          [--treeherder TREEHERDER] [--raw]
+                          [--treeherder-url TREEHERDER_URL] [--raw]
 
 Downloads pushes data from Treeherder, writing results as
 json to stdout.
@@ -416,10 +440,12 @@ optional arguments:
   -h, --help            show this help message and exit
   --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
                         Logging level. (default: INFO)
-  --repo {mozilla-central,autoland,inbound,try,mozilla-beta,mozilla-release}
+  --repo {mozilla-central,autoland,mozilla-inbound,try,mozilla-beta,mozilla-release,mozilla-esr68}
                         repository name to query. (default: mozilla-central)
+  --push_id PUSH_ID     Push id. (default: None)
   --author AUTHOR       Push author email. Should be specified if --repo is try and more
                         than one revision is selected. (default: None)
+  --comments COMMENTS   Push comments pattern. (default: None)
   --date-range DATE_RANGE
                         Push date range startdate enddate CCYY-MM-DD CCYY-MM-DD. (default: None)
   --revision REVISION   Push Revision. (default: None)
@@ -429,7 +455,7 @@ optional arguments:
                         Url to push revision which can be used in place of --repo and --revision. (default: None)
   --revision-range REVISION_RANGE
                         Push revision range fromchange-tochange. (default: None)
-  --treeherder TREEHERDER
+  --treeherder-url TREEHERDER_URL
                         Treeherder url. (default: https://treeherder.mozilla.org)
   --raw                 Do not reformat/indent json. (default: False)
 
@@ -448,8 +474,10 @@ Each argument and its value must be on separate lines in the file.
 
 usage: get_pushes_jobs_json.py [-h]
                                [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
+                               [--treeherder-url TREEHERDER_URL]
                                [--repo {mozilla-central,autoland,mozilla-inbound,try,mozilla-beta,mozilla-release,mozilla-esr68}]
-                               [--author AUTHOR]
+                               [--push_id PUSH_ID] [--author AUTHOR]
+                               [--comments COMMENTS]
                                [--date-range DATE_RANGE | --revision REVISION | --commit-revision COMMIT_REVISION | --revision-url REVISION_URL | --revision-range REVISION_RANGE]
                                [--add-bugzilla-suggestions]
                                [--test-failure-pattern TEST_FAILURE_PATTERN]
@@ -462,7 +490,7 @@ usage: get_pushes_jobs_json.py [-h]
                                [--platform PLATFORM]
                                [--platform-option PLATFORM_OPTION]
                                [--result RESULT] [--state STATE] [--tier TIER]
-                               [--treeherder TREEHERDER] [--raw]
+                               [--raw]
 
 Downloads pushes and jobs data from Treeherder, writing results as nested json to
 stdout.
@@ -480,10 +508,14 @@ optional arguments:
   -h, --help            show this help message and exit
   --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
                         Logging level. (default: INFO)
+  --treeherder-url TREEHERDER_URL
+                        Treeherder url. (default: https://treeherder.mozilla.org)
   --repo {mozilla-central,autoland,mozilla-inbound,try,mozilla-beta,mozilla-release,mozilla-esr68}
                         repository name to query. (default: mozilla-central)
+  --push_id PUSH_ID     Push id. (default: None)
   --author AUTHOR       Push author email. Should be specified if --repo is try and more
                         than one revision is selected. (default: None)
+  --comments COMMENTS   Push comments pattern. (default: None)
   --date-range DATE_RANGE
                         Push date range startdate enddate CCYY-MM-DD CCYY-MM-DD. (default: None)
   --revision REVISION   Push Revision. (default: None)
@@ -515,8 +547,6 @@ optional arguments:
   --result RESULT       Match job result regular expression: unknown, success, testfailed, .... (default: None)
   --state STATE         Match job state regular expression: pending, running, completed. (default: None)
   --tier TIER           Match job tier regular expression. (default: None)
-  --treeherder TREEHERDER
-                        Treeherder url. (default: https://treeherder.mozilla.org)
   --raw                 Do not reformat/indent json. (default: False)
 
 You can save a set of arguments to a file and specify them later using
@@ -525,7 +555,6 @@ the @argfile syntax. The arguments contained in the file will replace
 command line through the use of the @ syntax.
 
 Each argument and its value must be on separate lines in the file.
-
 ```
 
 ### summarize_isolation_pushes_jobs_json.py
@@ -534,11 +563,14 @@ Summarize job json for Test Isolation
 
 ``` shell
 $ ./summarize_isolation_pushes_jobs_json.py  --help
+
 usage: summarize_isolation_pushes_jobs_json.py [-h]
                                                [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
-                                               [--treeherder TREEHERDER]
+                                               [--treeherder-url TREEHERDER_URL]
                                                [--repo {mozilla-central,autoland,mozilla-inbound,try,mozilla-beta,mozilla-release,mozilla-esr68}]
+                                               [--push_id PUSH_ID]
                                                [--author AUTHOR]
+                                               [--comments COMMENTS]
                                                [--date-range DATE_RANGE | --revision REVISION | --commit-revision COMMIT_REVISION | --revision-url REVISION_URL | --revision-range REVISION_RANGE]
                                                [--add-bugzilla-suggestions]
                                                [--test-failure-pattern TEST_FAILURE_PATTERN]
@@ -552,16 +584,20 @@ usage: summarize_isolation_pushes_jobs_json.py [-h]
                                                [--platform-option PLATFORM_OPTION]
                                                [--result RESULT]
                                                [--state STATE] [--tier TIER]
+                                               [--whiteboard WHITEBOARD]
+                                               [--override-bug-summary OVERRIDE_BUG_SUMMARY]
                                                [--cache CACHE]
-                                               [--reload-cache]
+                                               [--update-cache]
+                                               [--dump-cache-stats]
                                                [--bug-creation-time BUG_CREATION_TIME]
                                                [--bugs-after BUGS_AFTER]
-                                               [--bug BUG] [--raw]
+                                               [--bug BUGS] [--raw]
                                                [--csv-summary] [--csv-results]
                                                [--include-failures]
                                                [--include-tests]
 
-Analyze pushes from bugs marked with whiteboard [test isolation].
+Analyze pushes from bugs marked with whiteboard [test isolation] or a
+value specified from the command options.
 
 Queries Bugzilla for bugs marked with [test isolation] in the whiteboard,
 determines the bug number, bug summary and revision from the bug then reads
@@ -586,12 +622,14 @@ optional arguments:
   -h, --help            show this help message and exit
   --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
                         Logging level. (default: INFO)
-  --treeherder TREEHERDER
+  --treeherder-url TREEHERDER_URL
                         Treeherder url. (default: https://treeherder.mozilla.org)
   --repo {mozilla-central,autoland,mozilla-inbound,try,mozilla-beta,mozilla-release,mozilla-esr68}
                         repository name to query. (default: mozilla-central)
+  --push_id PUSH_ID     Push id. (default: None)
   --author AUTHOR       Push author email. Should be specified if --repo is try and more
                         than one revision is selected. (default: None)
+  --comments COMMENTS   Push comments pattern. (default: None)
   --date-range DATE_RANGE
                         Push date range startdate enddate CCYY-MM-DD CCYY-MM-DD. (default: None)
   --revision REVISION   Push Revision. (default: None)
@@ -623,13 +661,18 @@ optional arguments:
   --result RESULT       Match job result regular expression: unknown, success, testfailed, .... (default: None)
   --state STATE         Match job state regular expression: pending, running, completed. (default: None)
   --tier TIER           Match job tier regular expression. (default: None)
-  --cache CACHE         Directory used to store cached objects retrieved from Bugzilla and Treeherder. (default: /tmp/test_isolation_cache/)
-  --reload-cache        Reload and save cached files. (default: False)
+  --whiteboard WHITEBOARD
+                        Bugzilla whiteboard value used to select the appropriate bugs. Should only be used with --bug. (default: [test isolation])
+  --override-bug-summary OVERRIDE_BUG_SUMMARY
+                        When reprocessing a bug with a problematic bug summary or when using --whiteboard to select a bug not filed by intermittent-bug-filer, specify an override bug summary to mimic an intermittent bug summary to be used to determine if a failure or test is reproduced. Otherwise the original bug summary will be used. Should only be used with --bug. (default: None)
+  --cache CACHE         Directory used to store cached objects retrieved from Bugzilla and Treeherder. (default: ~/cia_tools_cache/)
+  --update-cache        Recreate cached files with fresh data. (default: False)
+  --dump-cache-stats    Dump cache statistics to stderr. (default: False)
   --bug-creation-time BUG_CREATION_TIME
                         Starting creation time in YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSTZ format. Example 2019-07-27T17:28:00PDT or 2019-07-28T00:28:00Z (default: 2019-06-14)
   --bugs-after BUGS_AFTER
                         Only returns bugs whose id is greater than this integer. (default: None)
-  --bug BUG             Only returns results for bug the specified bug. (default: None)
+  --bug BUGS            Only returns results for bug the specified bug. (default: [])
   --raw                 Do not reformat/indent json. (default: False)
   --csv-summary         Output summary data in csv format. Does not include individual failures or tests. (default: False)
   --csv-results         Output test data in csv format. Does not include individual failures. (default: False)
