@@ -152,7 +152,7 @@ def download_file(url, dest, params=None, max_attempts=3):
 
     for attempt in range(max_attempts):
         try:
-            response = requestswrapper.get(url, mimetype=BINARY, stream=True, params=params)
+            response = requestswrapper._get(url, mimetype=BINARY, stream=True, params=params)
             with open(dest, 'wb') as dest_file:
                 for chunk in response.iter_content(chunk_size=10485760):
                     dest_file.write(chunk)

@@ -78,6 +78,7 @@ def save(attributes, name, data):
         os.makedirs(directory)
     if type(name) != str:
         name = str(name)
+    assert '/' not in name, 'Cached object {}/{} contains /'.format(directory, name)
     path = os.path.join(directory, name)
     if path not in CACHE_STATS:
         CACHE_STATS[path] = {'miss': 0, 'hit': 0}

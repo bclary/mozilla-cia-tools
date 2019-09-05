@@ -10,6 +10,9 @@ module docstring
 import argparse
 import json
 import logging
+import os
+
+import cache
 
 from common_args import (ArgumentFormatter, jobs_args, log_level_args, pushes_args,
                          treeherder_urls_args)
@@ -53,6 +56,24 @@ Each argument and its value must be on separate lines in the file.
     )
 
     parser.add_argument(
+        '--cache',
+        default='~/cia_tools_cache/',
+        help='Directory used to store cached objects retrieved from Bugzilla '
+        'and Treeherder.')
+
+    parser.add_argument(
+        '--update-cache',
+        default=False,
+        action='store_true',
+        help='Recreate cached files with fresh data.')
+
+    parser.add_argument(
+        '--dump-cache-stats',
+        action='store_true',
+        default=False,
+        help='Dump cache statistics to stderr.')
+
+    parser.add_argument(
         "--add-resource-usage",
         action='store_true',
         default=False,
@@ -68,6 +89,12 @@ Each argument and its value must be on separate lines in the file.
 
     args = parser.parse_args()
 
+    args.cache = os.path.expanduser(args.cache)
+
+    if not os.path.isdir(args.cache):
+        os.makedirs(args.cache)
+    cache.CACHE_HOME = args.cache
+
     init_treeherder(args.treeherder_url)
 
     if args.revision_url:
@@ -80,12 +107,16 @@ Each argument and its value must be on separate lines in the file.
     logger = logging.getLogger()
     logger.debug("main %s", args)
 
-    pushes = args.func(args)
+    pushes = args.func(args, args.repo)
 
     if args.raw:
         print(pushes)
     else:
         print(json.dumps(pushes, indent=2))
+
+    if args.dump_cache_stats:
+        cache.stats()
+
 
 if __name__ == '__main__':
     main()

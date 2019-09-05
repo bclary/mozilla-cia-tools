@@ -14,6 +14,7 @@ import re
 
 from urllib.parse import urlparse
 
+import cache
 import utils
 
 from common_args import (ArgumentFormatter, jobs_args, log_level_args, pushes_args,
@@ -31,7 +32,7 @@ def download_treeherder_job_details(args):
                      "expression not a file glob.")
         return
 
-    pushes = get_pushes_jobs_job_details_json(args)
+    pushes = get_pushes_jobs_job_details_json(args, args.repo)
     for push in pushes:
         for job in push['jobs']:
             # get some job type meta data to allow us to encode the job type name and symbol
@@ -154,6 +155,24 @@ Each argument and its value must be on separate lines in the file.
         None.""")
 
     parser.add_argument(
+        '--cache',
+        default='~/cia_tools_cache/',
+        help='Directory used to store cached objects retrieved from Bugzilla '
+        'and Treeherder.')
+
+    parser.add_argument(
+        '--update-cache',
+        default=False,
+        action='store_true',
+        help='Recreate cached files with fresh data.')
+
+    parser.add_argument(
+        '--dump-cache-stats',
+        action='store_true',
+        default=False,
+        help='Dump cache statistics to stderr.')
+
+    parser.add_argument(
         "--output",
         dest="output",
         default="output",
@@ -169,6 +188,12 @@ Each argument and its value must be on separate lines in the file.
 
     args = parser.parse_args()
 
+    args.cache = os.path.expanduser(args.cache)
+
+    if not os.path.isdir(args.cache):
+        os.makedirs(args.cache)
+    cache.CACHE_HOME = args.cache
+
     init_treeherder(args.treeherder_url)
 
     if args.revision_url:
@@ -182,6 +207,9 @@ Each argument and its value must be on separate lines in the file.
     logger.debug("main %s", args)
 
     args.func(args)
+
+    if args.dump_cache_stats:
+        cache.stats()
 
 if __name__ == '__main__':
     main()

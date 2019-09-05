@@ -193,11 +193,15 @@ def get_pushes_jobs_job_details_json(args, repo, update_cache=False):
     cache_attributes = ['treeherder', repo, 'job_details']
 
     logger = logging.getLogger()
-    pushes = get_pushes_jobs_json(args)
+    pushes = get_pushes_jobs_json(args, repo, update_cache=update_cache)
 
     for push in pushes:
         for job in push['jobs']:
-            job_details_data = cache.load(cache_attributes, job['job_guid'])
+            # job['job_guid'] contains a slash followed by the run number.
+            # Convert this into a value which can be used a file name
+            # by replacing / with _.
+            job_guid_path = job['job_guid'].replace('/', '_')
+            job_details_data = cache.load(cache_attributes, job_guid_path)
             if job_details_data and not update_cache:
                 job['job_details'] = json.loads(job_details_data)
             else:
@@ -217,14 +221,14 @@ def get_pushes_jobs_job_details_json(args, repo, update_cache=False):
                     logger.warning("Unable to get job_details for job_guid %s",
                                    job['job_guid'])
                     continue
-                cache.save(cache_attributes, job['job_guid'], json.dumps(job['job_details'], indent=2))
+                cache.save(cache_attributes, job_guid_path, json.dumps(job['job_details'], indent=2))
 
             if hasattr(args, 'add_resource_usage') and args.add_resource_usage:
                 for attempt in range(3):
                     try:
                         for job_detail in job['job_details']:
                             if job_detail['value'] == 'resource-usage.json':
-                                resource_usage_name = job['job_guid'] + '.' + job_detail['value']
+                                resource_usage_name = job_guid_path + '-' + job_detail['value']
                                 job_detail_resource_usage_data = cache.load(cache_attributes, resource_usage_name)
                                 if job_detail_resource_usage_data and not update_cache:
                                     job['resource_usage'] = json.loads(job_detail_resource_usage_data)
