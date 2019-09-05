@@ -157,16 +157,17 @@ def download_file(url, dest, params=None, max_attempts=3):
                 for chunk in response.iter_content(chunk_size=10485760):
                     dest_file.write(chunk)
             break
-        except requests.exceptions.HTTPError as http_error:
-            logger.error("download_file(%s, %s) %s", url, dest, http_error, exc_info=1)
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as err:
-            logger.warning("utils.download_file: %s: Attempt %s: %s",
-                           url, attempt, err)
-            if attempt == max_attempts - 1:
-                logger.error("utils.download_file: %s: giving up", url, exc_info=1)
-                return
-            # Wait and try again.
+        except requests.exceptions.HTTPError as e:
+            if '503 Server Error' not in e.message:
+                raise
+            logger.exception("utils.download_file(%s, %s): attempt %s", url, dest, attempt)
+        except requests.exceptions.ConnectionError:
+            logger.exception("utils.download_file(%s, %s): attempt %s", url, dest, attempt)
+        if attempt != max_attempts - 1:
             time.sleep(60 + random.randrange(0, 30, 1))
+    if attempt == max_attempts - 1:
+        logger.error("utils.download_file(%s, %s): giving up", url, dest)
+
 
 def date_to_timestamp(dateval):
     """
