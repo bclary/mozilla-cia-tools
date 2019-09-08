@@ -19,6 +19,8 @@ CLIENT = None
 REPOSITORIES = None
 URL = None
 
+logger = logging.getLogger()
+
 
 def init_treeherder(treeherder_url):
     global CLIENT, URL, REPOSITORIES
@@ -71,9 +73,6 @@ def get_pushes_json(args, repo, update_cache=False):
     """
     cache_attributes = ['treeherder', repo, 'push']
 
-    logger = logging.getLogger()
-    logger.debug("treeherder %s", args)
-
     push_params = get_treeherder_push_params(args)
 
     all_pushes = []
@@ -85,11 +84,11 @@ def get_pushes_json(args, repo, update_cache=False):
         try:
             all_pushes = CLIENT.get_pushes(repo, **push_params)
             break
-        except requests.exceptions.HTTPError as e:
-            if '503 Server Error' not in e.message:
+        except requests.HTTPError as e:
+            if '503 Server Error' not in str(e):
                 raise
             logger.exception('get_pushes_json: retrying in 30 seconds.')
-        except requests.exceptions.ConnectionError:
+        except requests.ConnectionError:
             logger.exception("get_pushes_json: retrying in 30 seconds")
         time.sleep(30)
     CLIENT.MAX_COUNT = max_count
@@ -117,9 +116,6 @@ def get_push_json(args, repo, push_id, update_cache=False):
     """
     cache_attributes = ['treeherder', repo, 'push']
 
-    logger = logging.getLogger()
-    logger.debug("treeherder %s", args)
-
     push_params = get_treeherder_push_params(args)
     push_params['id'] = push_id
 
@@ -133,11 +129,11 @@ def get_push_json(args, repo, push_id, update_cache=False):
         try:
             pushes = CLIENT.get_pushes(repo, **push_params)
             break
-        except requests.exceptions.HTTPError as e:
-            if '503 Server Error' not in e.message:
+        except requests.HTTPError as e:
+            if '503 Server Error' not in str(e):
                 raise
             logger.exception('get_push_json: retrying in 30 seconds.')
-        except requests.exceptions.ConnectionError:
+        except requests.ConnectionError:
             logger.exception("get_push_json: retrying in 30 seconds")
         time.sleep(30)
     if pushes:
@@ -161,7 +157,17 @@ def get_pushes_jobs_json(args, repo, update_cache=False):
         if push_jobs_data and not update_cache:
             jobs = json.loads(push_jobs_data)
         else:
-            jobs = CLIENT.get_jobs(repo, push_id=push['id'], count=None)
+            while True:
+                try:
+                    jobs = CLIENT.get_jobs(repo, push_id=push['id'], count=None)
+                    break
+                except requests.HTTPError as e:
+                    if '503 Server Error' not in str(e):
+                        raise
+                    logger.exception('get_pushes_jobs_json: retrying in 30 seconds.')
+                except requests.ConnectionError:
+                    logger.exception("get_pushes_jobs_json: retrying in 30 seconds")
+                time.sleep(30)
             cache.save(cache_attributes_push_jobs, push['id'], json.dumps(jobs, indent=2))
 
         if not args.job_filters:
@@ -192,7 +198,6 @@ def get_pushes_jobs_job_details_json(args, repo, update_cache=False):
     """
     cache_attributes = ['treeherder', repo, 'job_details']
 
-    logger = logging.getLogger()
     pushes = get_pushes_jobs_json(args, repo, update_cache=update_cache)
 
     for push in pushes:
@@ -213,11 +218,11 @@ def get_pushes_jobs_job_details_json(args, repo, update_cache=False):
                     try:
                         job['job_details'] = CLIENT.get_job_details(job_guid=job['job_guid'])
                         break
-                    except requests.exceptions.HTTPError as e:
-                        if '503 Server Error' not in e.message:
+                    except requests.HTTPError as e:
+                        if '503 Server Error' not in str(e):
                             raise
                         logger.exception('get_job_details attempt %s', attempt)
-                    except requests.exceptions.ConnectionError:
+                    except requests.ConnectionError:
                         logger.exception('get_job_details attempt %s', attempt)
                     if attempt != 2:
                         time.sleep(30)
@@ -242,11 +247,11 @@ def get_pushes_jobs_job_details_json(args, repo, update_cache=False):
                                     cache.save(cache_attributes, resource_usage_name, json.dumps(job['resource_usage'], indent=2))
                                 break
                         break
-                    except requests.exceptions.HTTPError as e:
-                        if '503 Server Error' not in e.message:
+                    except requests.HTTPError as e:
+                        if '503 Server Error' not in str(e):
                             raise
                         logger.exception('get_job_details resource %s attempt %s', attempt)
-                    except requests.exceptions.ConnectionError:
+                    except requests.ConnectionError:
                         logger.exception('get_job_details resource %s attempt %s', attempt)
                     if attempt != 2:
                         time.sleep(30)
@@ -265,8 +270,6 @@ def get_job_by_repo_job_id_json(args, repo, job_id, update_cache=False):
     """
     cache_attributes = ['treeherder', repo, 'jobs']
 
-    logger = logging.getLogger()
-
     while True:
         try:
             job_data = cache.load(cache_attributes, job_id)
@@ -277,11 +280,11 @@ def get_job_by_repo_job_id_json(args, repo, job_id, update_cache=False):
                 for job in jobs:
                     cache.save(cache_attributes, job['id'], json.dumps(job, indent=2))
             break
-        except requests.exceptions.HTTPError as e:
-            if '503 Server Error' not in e.message:
+        except requests.HTTPError as e:
+            if '503 Server Error' not in str(e):
                 raise
             logger.exception('get_job_by_repo_job_id_json: retrying in 30 seconds.')
-        except requests.exceptions.ConnectionError:
+        except requests.ConnectionError:
             logger.exception("get_job_by_repo_job_id_json: retrying in 30 seconds")
         time.sleep(30)
 
@@ -296,32 +299,16 @@ def get_bug_job_map_json(args, repo, job_id, update_cache=False):
     """
     cache_attributes = ['treeherder', repo, 'bug-job-map']
 
-    logger = logging.getLogger()
     bug_job_map_url = '%s/api/project/%s/bug-job-map/?job_id=%s' % (
         (URL, repo, job_id))
 
-    # Attempt up to 3 times to work around connection failures.
-    for attempt in range(3):
-        try:
-            bug_job_map_data = cache.load(cache_attributes, job_id)
-            if bug_job_map_data and not update_cache:
-                bug_job_map = json.loads(bug_job_map_data)
-                bug_job_map_data = None
-            else:
-                bug_job_map = utils.get_remote_json(bug_job_map_url)
-                cache.save(cache_attributes, job_id, json.dumps(bug_job_map, indent=2))
-            break
-        except requests.exceptions.HTTPError as e:
-            if '503 Server Error' not in e.message:
-                raise
-            logger.exception('get_bug_job_map_json attempt %s', attempt)
-        except requests.exceptions.ConnectionError:
-            logger.exception('get_bug_job_map_json attempt %s', attempt)
-        if attempt != 2:
-            time.sleep(30)
-    if attempt == 2:
-        logger.warning("Unable to get bug_job_map %s", bug_job_map_url)
-        bug_job_map = None
+    bug_job_map_data = cache.load(cache_attributes, job_id)
+    if bug_job_map_data and not update_cache:
+        bug_job_map = json.loads(bug_job_map_data)
+        bug_job_map_data = None
+    else:
+        bug_job_map = utils.get_remote_json(bug_job_map_url)
+        cache.save(cache_attributes, job_id, json.dumps(bug_job_map, indent=2))
 
     return bug_job_map
 
@@ -334,7 +321,6 @@ def get_job_bugzilla_suggestions_json(args, repo, job_id, include_related_bugs=F
     """
     cache_attributes = ['treeherder', repo, 'bugzilla_suggestions']
 
-    logger = logging.getLogger()
     suggestions_data = cache.load(cache_attributes, job_id)
     if suggestions_data and not update_cache:
         suggestions = json.loads(suggestions_data)
@@ -342,23 +328,8 @@ def get_job_bugzilla_suggestions_json(args, repo, job_id, include_related_bugs=F
         bugzilla_suggestions_url = '%s/api/project/%s/jobs/%s/bug_suggestions/' % (
             (URL, repo, job_id))
 
-        # Attempt up to 3 times to work around connection failures.
-        for attempt in range(3):
-            try:
-                suggestions = utils.get_remote_json(bugzilla_suggestions_url)
-                cache.save(cache_attributes, job_id, json.dumps(suggestions, indent=2))
-                break
-            except requests.exceptions.HTTPError as e:
-                if '503 Server Error' not in e.message:
-                    raise
-                logger.exception('get_job_bugzilla_suggestions_json attempt %s', attempt)
-            except requests.exceptions.ConnectionError:
-                logger.exception('get_job_bugzilla_suggestions_json attempt %s', attempt)
-            if attempt != 2:
-                time.sleep(30)
-        if attempt == 2:
-            logger.warning("Unable to get job_bugzilla_suggestions %s", bugzilla_suggestions_url)
-            suggestions = []
+        suggestions = utils.get_remote_json(bugzilla_suggestions_url)
+        cache.save(cache_attributes, job_id, json.dumps(suggestions, indent=2))
 
     if args.test_failure_pattern:
         bugzilla_suggestions = [
@@ -387,7 +358,6 @@ def get_failure_count_json(args, repo, bug_id, start_date, end_date):
     ]
 
     """
-    logger = logging.getLogger()
 
     if type(start_date) == datetime.datetime:
         start_date = start_date.strftime('%Y-%m-%d')
@@ -397,21 +367,6 @@ def get_failure_count_json(args, repo, bug_id, start_date, end_date):
     failure_count_url = '%s/api/failurecount/?startday=%s&endday=%s&tree=%s&bug=%s' % (
         (URL, start_date, end_date, repo, bug_id))
 
-    # Attempt up to 3 times to work around connection failures.
-    for attempt in range(3):
-        try:
-            failure_count_json = utils.get_remote_json(failure_count_url)
-            break
-        except requests.exceptions.HTTPError as e:
-            if '503 Server Error' not in e.message:
-                raise
-            logger.exception('get_failure_count_json attempt %s', attempt)
-        except requests.exceptions.ConnectionError:
-            logger.exception('get_failure_count_json attempt %s', attempt)
-        if attempt != 2:
-            time.sleep(30)
-    if attempt == 2:
-        logger.warning("Unable to get failure_count %s", failure_count_url)
-        failure_count_json = None
+    failure_count_json = utils.get_remote_json(failure_count_url)
 
     return failure_count_json

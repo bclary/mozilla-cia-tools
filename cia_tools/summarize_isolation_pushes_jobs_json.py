@@ -33,6 +33,9 @@ from treeherder import (
     init_treeherder,
 )
 
+from bugzilla_matching import match_bug_summary_to_mozharness_failure
+
+logger = None
 
 BUGZILLA_URL = 'https://bugzilla.mozilla.org/rest/'
 ORIGINAL_SECTIONS = ('original',)
@@ -40,16 +43,30 @@ ISOLATION_SECTIONS = ('repeated', 'id', 'it')
 TEST_FAILURE_PATTERN = 'TEST-|PROCESS-CRASH|REFTEST TEST-|Assertion failure:'
 
 
-def convert_bug_summary_to_pattern(bug_summary):
-    parts = munge_failure(bug_summary).split(' | ')
-    for i in range(len(parts)):
-        parts[i] = re.escape(parts[i])
-    pattern = re.sub('<(test|random)>', '[^|]+', ' \\| '.join(parts))
+def convert_failure_to_pattern(failure):
+    OUTPUT_RE = re.compile(r'\s*(?:GECKO\(\d+\)|PID \d+)\s* [|] ')
+    # truncate the maximum length of bugzilla suggestion searches.
+    #failure = failure[:480].strip()
+    #parts = bugzilla_summary_munge_failure(failure).split(' | ')
+    #for i in range(len(parts)):
+    #    parts[i] = re.escape(parts[i])
+    #pattern = re.sub('<(test|random)>', '[^|]+', ' \\| '.join(parts))
+    failure = failure[:480].strip()
+    failure = OUTPUT_RE.sub('', failure)
+    pattern = re.escape(failure)
     if r'\ ==\ ' in pattern and 'Assertion failure:' not in pattern:
         parts = pattern.split(r'\ ==\ ')
         parts[0] = '.*' + parts[0]
         parts[1] = '.*' + parts[1]
         pattern = r'\ ==\ '.join(parts)
+    task_re = re.compile(r'task_[0-9]+')
+    # These are applied after the pattern was escaped therefore
+    # we need to account for matching the result of the escaped value.
+    number_re = re.compile(r'\d+\.\d+')
+    time_re   = re.compile(r'(\d{2}:)\d{2}:\d{2}')
+    pattern = task_re.sub(lambda m: task_re.pattern, pattern)
+    pattern = number_re.sub(lambda m: number_re.pattern, pattern)
+    pattern = time_re.sub(lambda m: time_re.pattern, pattern)
     return pattern
 
 
@@ -61,7 +78,6 @@ def get_test_isolation_bugzilla_data(args):
     """
     cache_attributes = ['test-isolation']
 
-    logger = logging.getLogger()
 
     bugzilla_data = cache.load(cache_attributes, 'bugzilla.json')
     if bugzilla_data and not args.update_cache:
@@ -76,10 +92,9 @@ def get_test_isolation_bugzilla_data(args):
 
     query = BUGZILLA_URL + 'bug?'
     query_terms = {
-        'include_fields': 'id,creation_time',
-        'creator': 'intermittent-bug-filer@mozilla.bugs',
+        'include_fields': 'id,creation_time,whiteboard',
         'creation_time': args.bug_creation_time,
-        'status_whiteboard': args.whiteboard,
+        'whiteboard': args.whiteboard,
         'limit': 100,
         'offset': 0,
         }
@@ -87,12 +102,6 @@ def get_test_isolation_bugzilla_data(args):
         query_terms['id'] = ','.join([str(id) for id in args.bugs])
     else:
         query_terms['creation_time'] = args.bug_creation_time
-
-    if args.whiteboard != ['test-isolation']:
-        # We aren't looking for bugs filed by the sheriff's
-        # so delete the requirement that the bug be created
-        # by the intermittent-bug-filer.
-        del query_terms['creator']
 
     while True:
         response = utils.get_remote_json(query, params=query_terms)
@@ -112,6 +121,11 @@ def get_test_isolation_bugzilla_data(args):
             if args.bugs_after and bug['id'] <= args.bugs_after:
                 continue
 
+            if args.whiteboard not in bug['whiteboard']:
+                # The query performs an all words not substring
+                # query, so restrict to the substring.
+                continue
+
             if args.bugs and bug['id'] not in args.bugs:
                 continue
 
@@ -122,8 +136,7 @@ def get_test_isolation_bugzilla_data(args):
                 return
 
             bug_summary = response2['bugs'][0]['summary']
-            munged_bug_summary = munge_failure(bug_summary)
-            test = get_test(munged_bug_summary)
+            munged_bug_summary = bugzilla_summary_munge_failure(bug_summary)
 
             query3 = BUGZILLA_URL + 'bug/%s/comment' % bug['id']
             response3 = utils.get_remote_json(query3)
@@ -132,8 +145,10 @@ def get_test_isolation_bugzilla_data(args):
                 return
 
             raw_text = response3['bugs'][str(bug['id'])]['comments'][0]['raw_text']
+
             match = re_logview.search(raw_text)
             if match:
+                # Get push associated with this failed job.
                 job_id = int(match.group(1))
                 repo = match.group(2)
                 job = get_job_by_repo_job_id_json(args, repo, job_id, update_cache=args.update_cache)
@@ -148,7 +163,9 @@ def get_test_isolation_bugzilla_data(args):
                 (new_args.repo, _, new_args.revision) = new_args.revision_url.split('/')[-3:]
                 new_args.add_bugzilla_suggestions = True
                 new_args.state = 'completed'
-                new_args.job_type_name = '^test-'
+                new_args.result = 'success|testfailed'
+                #new_args.job_type_name = '^test-'
+                new_args.job_type_name = job['job_type_name']
                 new_args.test_failure_pattern = TEST_FAILURE_PATTERN
                 pushes_args.compile_filters(new_args)
                 jobs_args.compile_filters(new_args)
@@ -156,18 +173,34 @@ def get_test_isolation_bugzilla_data(args):
                 if revision_url not in data:
                     data[revision_url] = []
 
+                mozharness_failure = match_bug_summary_to_mozharness_failure(bug_summary, raw_text)
+
+                test = None
+                if mozharness_failure:
+                    test = get_test(mozharness_failure)
+                    pattern = convert_failure_to_pattern(mozharness_failure)
+                if not test:
+                    test = get_test(munged_bug_summary)
+                    pattern = convert_failure_to_pattern(munged_bug_summary)
+                if not test:
+                    logger.warning('Unable to obtain test for '
+                                   'bug {} {} failure {}'.format(
+                                       bug['id'], bug_summary, mozharness_failure))
+
                 bug_data = {
                     'bug_id': bug['id'],
                     'bug_summary': bug_summary,
                     'munged_bug_summary': munged_bug_summary,
+                    'job_type_name': job['job_type_name'],
                     'test': test,
+                    'mozharness_failure': mozharness_failure,
                     'job_id': job_id,
                     'push_id': push_id,
                     'repository': repository['name'],
                     'revision_url': revision_url,
                     'bugzilla_suggestions': get_job_bugzilla_suggestions_json(new_args, new_args.repo, job_id, update_cache=args.update_cache),
                     'bug_job_map': get_bug_job_map_json(new_args, new_args.repo, job_id, update_cache=args.update_cache),
-                    'pattern': convert_bug_summary_to_pattern(munged_bug_summary),
+                    'pattern': pattern,
                 }
 
                 data[revision_url].append(bug_data)
@@ -189,7 +222,7 @@ def get_test_isolation_bugzilla_data(args):
                         failure_count += failures['failure_count']
                 bug_data['failure_count'] = failure_count
 
-            elif args.whiteboard:
+            elif args.whiteboard and False: #Disable this as it is buggy.
                 # This run has specified the test or is this is a bug
                 # that is not a Treeherder filed bug. If it was marked
                 # via the whiteboad then we are interested in the
@@ -199,6 +232,7 @@ def get_test_isolation_bugzilla_data(args):
                 # matter.  The problem is this bug does not
                 # necessarily have a bug_summary referencing a test
                 # failure...
+                test = None # We don't have a failure in this case.
                 comments = response3['bugs'][str(bug['id'])]['comments']
                 for comment in comments:
                     if not comment['raw_text'].startswith('Pushed by'):
@@ -221,7 +255,7 @@ def get_test_isolation_bugzilla_data(args):
                         pushes_args.compile_filters(new_args)
                         jobs_args.compile_filters(new_args)
 
-                        pushes = get_pushes_jobs_json(new_args, update_cache=args.update_cache)
+                        pushes = get_pushes_jobs_json(new_args, new_args.repo, update_cache=args.update_cache)
                         if len(pushes):
                             # Convert the revision url to 40 characters.
                             push = pushes[0]
@@ -251,7 +285,7 @@ def get_test_isolation_bugzilla_data(args):
                                 'revision_url': revision_url,
                                 'bugzilla_suggestions': [],
                                 'bug_job_map': [],
-                                'pattern': convert_bug_summary_to_pattern(bug_summary),
+                                'pattern': convert_failure_to_pattern(bug_summary),
                             }
                             data[revision_url].append(bug_data)
 
@@ -278,27 +312,26 @@ def get_test_isolation_bugzilla_data(args):
     return data
 
 
-failure_munge_res = [
-    (re.compile(r'(/?(TEST|PROCESS)-[A-Z-]+ [|] )'), ''),
+# Patterns used to remove or replace text in the bug summary.
+bugzilla_summary_munge_res = [
+    (re.compile(r'/TEST'), 'TEST'),
+    (re.compile(r'/PROCESS'), 'PROCESS'),
     (re.compile(r'<test>'), ''),
-    (re.compile(r'<>random.js'), ' '),
-    (re.compile(r'<anything>.js'), ''),
-    (re.compile(r'<random>'), ''),
     (re.compile(r'GECKO[^ ]+ [|] '), ''),
     (re.compile(r'Intermittent '), ''),
     (re.compile(r'PID ([\d]+) [|] '), ''),
     (re.compile(r'Tier 2 ', flags=re.IGNORECASE), ''),
-    (re.compile(r'Z:/+', flags=re.IGNORECASE), '/'),
+    #(re.compile(r'Z:/+', flags=re.IGNORECASE), '/'),
     (re.compile(r'[\[]Exception.*'), ''),
-    (re.compile(r'file:/+'), '/'),
+    #(re.compile(r'file:/+'), '/'),
     (re.compile(r'fission '), ''),
-    (re.compile(r'task_[0-9]+'), 'task_1234'),
-    (re.compile(r'xpcshell-remote.ini:'), ''),
+    (re.compile(r'task_[0-9]+.*'), 'task_'),
+    #(re.compile(r'xpcshell-remote.ini:'), ''),
 ]
 
 
-def munge_failure(failure):
-    for regx, replacement in failure_munge_res:
+def bugzilla_summary_munge_failure(failure):
+    for regx, replacement in bugzilla_summary_munge_res:
         match = regx.search(failure)
         if match:
             failure = failure.replace(match.group(0), replacement)
@@ -307,6 +340,9 @@ def munge_failure(failure):
 
 re_test_failure_pattern = re.compile(r'(TEST-|PROCESS-CRASH)')
 re_bad_test = re.compile(r'((Skipping|Finished|.*giving up)|'
+                         r'<>random.js|'
+                         r'<anything>.js|'
+                         r'<random>|'
                          r'Last test finished|'
                          r'Main app process exited normally|'
                          r'ShutdownLeaks|'
@@ -315,17 +351,24 @@ re_bad_test = re.compile(r'((Skipping|Finished|.*giving up)|'
                          r'mozrunner-startup|'
                          r'pid: |'
                          r'remoteautomation.py|'
-                         r'unknown test url)')
+                         r'unknown test url|'
+                         r'<[^>]*(random|test|anything)[^>]*>(<[^>]*(random|test|anything)[^>]*>)?(\.js)?)')
 re_extract_tests = [
     re.compile(r'(?:^[^:]+:)?(?:https?|file):[^ ]+/reftest/tests/([^ ]+)'),
     re.compile(r'(?:^[^:]+:)?(?:https?|file):[^:]+:[0-9]+/tests/([^ ]+)'),
-    re.compile(r'xpcshell-[^ ]+\.ini:(.*)'),
+    re.compile(r'[^ ]+/reftest/tests/([^ ]+)'),
+    re.compile(r'[0-9]+/tests/([^ ]+)'),
+    re.compile(r'xpcshell[^.]*\.ini:(.*)'),
     re.compile(r'/tests/([^ ]+) - finished .*'),
+    re.compile(r'/tests/([^ ]+) logged result after SimpleTest.finish.*'),
+    re.compile(r'(.*)\s+[=!]=\s+.*'),
 ]
 
 
 def munge_test_path(test_path):
-    if re_bad_test.search(test_path):
+    m = re_bad_test.search(test_path)
+    if m:
+        #logger.warning('munge_test_path: ignoring {} due to {}'.format(test_path, m.group(0)))
         return None
     for r in re_extract_tests:
         m = r.match(test_path)
@@ -336,38 +379,42 @@ def munge_test_path(test_path):
 
 
 def get_test(failure):
+    OUTPUT_RE = re.compile(r'\s*(?:GECKO\(\d+\)|PID \d+)\s*$')
     parts = failure.split(' | ')
-    if len(parts) == 3:
+    if OUTPUT_RE.match(parts[0]):
+        parts.pop(0)
+
+    if len(parts) >= 3:
         # This matches what we expect from bugzilla_suggestions
         # for actual failure messages.
         # result | test | message
+        # 4 parts matches REFTEST TEST-UNEXPECTED-FAIL | file:///Z:/task_1562891058/build/tests/reftest/tests/image/test/reftest/downscaling/downscale-moz-icon-1.html == file:///Z:/task_1562891058/build/tests/reftest/tests/image/test/reftest/downscaling/downscale-moz-icon-1-ref.html | crash-check | This test left crash dumps behind, but we weren't expecting it to!
         offset = 2 if 'SimpleTest' in failure else 1
-    elif len(parts) == 2 and ('TEST-' in failure or 'PROCESS-' in failure):
+    elif len(parts) == 1:
+        offset = -1
+    elif 'TEST-' in failure or 'PROCESS-' in failure:
         # result | test
         offset = 1
     else:
-        # test ...
+        # test | ...
         offset = 0
-    test = munge_test_path(parts[offset])
-    if (test is None or test == '<test>') and len(parts) > offset + 1:
-        # Fake the test to be the message but really we
-        # should be tracking the result, test and message
-        # separately.
-        test = parts[offset + 1]
-        test = munge_test_path(test)
-    if test:
-        re_appcrashed = re.compile(r'application crash .*')
-        match = re_appcrashed.search(test)
-        if match:
-            test = test.replace(match.group(0), '')
-    #if not test:
-    #    pass
-    #elif ' ' in test:
-    #    # reject any test with spaces
-    #    test = None
-    #elif '/' not in test and '\\' not in test:
-    #    # reject any test_path without a separator
-    #    test = None
+    if offset == -1:
+        test = None
+    else:
+        test = munge_test_path(parts[offset])
+        if (test is None or test == '<test>') and len(parts) > offset + 1:
+            # Fake the test to be the message but really we
+            # should be tracking the result, test and message
+            # separately.
+            test = parts[offset + 1]
+            test = munge_test_path(test)
+        if not test:
+            test = None
+        else:
+            re_appcrashed = re.compile(r'application crash .*')
+            match = re_appcrashed.search(test)
+            if match:
+                test = test.replace(match.group(0), '')
     return test
 
 
@@ -378,42 +425,45 @@ def summarize_isolation_pushes_jobs_json(args):
     test_isolation_bugzilla_data = get_test_isolation_bugzilla_data(args)
     for revision_url in test_isolation_bugzilla_data:
         revision_data = test_isolation_bugzilla_data[revision_url]
+        new_args = copy.deepcopy(args)
+        new_args.revision_url = revision_url
+        (new_args.repo, _, new_args.revision) = new_args.revision_url.split('/')[-3:]
+        new_args.add_bugzilla_suggestions = True
+        new_args.state = 'completed'
+        new_args.result = 'success|testfailed'
+        new_args.job_type_name = '^test-'
+        new_args.test_failure_pattern = TEST_FAILURE_PATTERN
+        jobs_args.compile_filters(new_args)
+
+        # Load the pushes/jobs data from cache if it exists.
+        cache_attributes = ['test-isolation', new_args.repo]
+        pushes_jobs_data = cache.load(cache_attributes, new_args.revision)
+        if pushes_jobs_data and not args.update_cache:
+            new_pushes = json.loads(pushes_jobs_data)
+        else:
+            new_pushes = get_pushes_jobs_json(new_args, new_args.repo, update_cache=args.update_cache)
+            cache.save(cache_attributes, new_args.revision, json.dumps(new_pushes, indent=2))
+
+        pushes.extend(new_pushes)
+
         for revision_bug_data in revision_data:
             if args.bugs and revision_bug_data['bug_id'] not in args.bugs:
                 # Skip if we requested a specific bug and this is not it.
                 continue
             if args.bugs and args.override_bug_summary:
-                bug_summary = args.override_bug_summary
-            else:
-                bug_summary = revision_bug_data['bug_summary']
-            revision_bug_data['bug_summary'] = munge_failure(bug_summary)
-            new_args = copy.deepcopy(args)
-            new_args.revision_url = revision_url
-            (new_args.repo, _, new_args.revision) = new_args.revision_url.split('/')[-3:]
-            new_args.add_bugzilla_suggestions = True
-            new_args.state = 'completed'
-            new_args.result = None
-            new_args.job_type_name = '^test-'
-            new_args.test_failure_pattern = TEST_FAILURE_PATTERN
-            jobs_args.compile_filters(new_args)
-
-            # Load the pushes/jobs data from cache if it exists.
-            cache_attributes = ['test-isolation', new_args.repo]
-            pushes_jobs_data = cache.load(cache_attributes, new_args.revision)
-            if pushes_jobs_data and not args.update_cache:
-                new_pushes = json.loads(pushes_jobs_data)
-            else:
-                new_pushes = get_pushes_jobs_json(new_args, new_args.repo, update_cache=args.update_cache)
-                cache.save(cache_attributes, new_args.revision, json.dumps(new_pushes, indent=2))
-
-            pushes.extend(new_pushes)
+                revision_bug_data['bug_summary'] = bugzilla_summary_munge_failure(args.override_bug_summary)
 
     pushes_jobs_data = None
     data = convert_pushes_to_test_isolation_bugzilla_data(args, pushes)
 
+    #logger.info('convert_pushes_to_test_isolation_bugzilla_data\n{}'.format(
+    #    json.dumps(data, indent=2)))
+
     summary = {}
 
     for revision_url in data:
+
+        (repo, _, revision) = revision_url.split('/')[-3:]
 
         if revision_url not in summary:
             summary[revision_url] = {}
@@ -423,7 +473,13 @@ def summarize_isolation_pushes_jobs_json(args):
 
         for job_type_name in job_type_names:
             if job_type_name not in summary_revision:
-                summary_revision[job_type_name] = summary_revision_job_type = {}
+                summary_revision[job_type_name] = dict(
+                    notes = [],
+                    isolation_job = "{}/#/jobs?repo={}&tier=1%2C2%2C3&revision={}&searchStr={}".format(
+                        args.treeherder_url, repo, revision, job_type_name),
+                )
+            summary_revision_job_type = summary_revision[job_type_name]
+
             job_type = data[revision_url][job_type_name]
 
             if 'bugzilla_data' not in summary_revision_job_type:
@@ -432,32 +488,37 @@ def summarize_isolation_pushes_jobs_json(args):
                     # bug_data['failure_reproduced'][section_name] counts the
                     # number of times the original bug_summary failure
                     # was seen in that section of jobs.
-                    bug_data['failure_reproduced'] = {
-                        'original': 0,
-                        'repeated': 0,
-                        'id': 0,
-                        'it': 0,
-                    }
+                    bug_data['failure_reproduced'] = dict(
+                        original = 0,
+                        repeated = 0,
+                        id = 0,
+                        it = 0,
+                    )
                     # bug_data['test_reproduced'][section_name] counts the
                     # number of times the original bug_summary test
                     # was seen in that section of jobs.
-                    bug_data['test_reproduced'] = {
-                        'original': 0,
-                        'repeated': 0,
-                        'id': 0,
-                        'it': 0,
-                    }
+                    bug_data['test_reproduced'] = dict(
+                        original = 0,
+                        repeated = 0,
+                        id = 0,
+                        it = 0,
+                    )
 
             for section_name in (ORIGINAL_SECTIONS + ISOLATION_SECTIONS):
                 if section_name not in summary_revision_job_type:
-                    summary_revision_job_type[section_name] = summary_revision_job_type_section = {}
-                    summary_revision_job_type_section['failures'] = {}
-                    summary_revision_job_type_section['tests'] = {}
-                    summary_revision_job_type_section['failure_reproduced'] = 0
-                    summary_revision_job_type_section['test_reproduced'] = 0
+                    summary_revision_job_type[section_name] = dict(
+                        failures = {},
+                        tests = {},
+                        failure_reproduced = 0,
+                        test_reproduced = 0,
+                    )
                     if section_name == 'original':
-                        summary_revision_job_type_section['bug_job_map'] = []
+                        summary_revision_job_type[section_name]['bug_job_map'] = []
+
+                summary_revision_job_type_section = summary_revision_job_type[section_name]
+
                 job_type_section = job_type[section_name]
+
                 run_time = 0
                 jobs_testfailed_count = 0
                 bugzilla_suggestions_count = 0
@@ -471,17 +532,19 @@ def summarize_isolation_pushes_jobs_json(args):
 
                     for bugzilla_suggestion in job['bugzilla_suggestions']:
 
-                        failure = munge_failure(bugzilla_suggestion['search'])
+                        #failure = bugzilla_summary_munge_failure(bugzilla_suggestion['search'])
+                        failure = bugzilla_suggestion['search']
                         if failure not in summary_revision_job_type_section['failures']:
-                            summary_revision_job_type_section['failures'][failure] = {
-                                'count': 0,
-                            }
-                            summary_revision_job_type_section['failures'][failure]['failure_reproduced'] = 0
+                            summary_revision_job_type_section['failures'][failure] = dict(
+                                count = 0,
+                                failure_reproduced = 0,
+                            )
 
                         summary_revision_job_type_section['failures'][failure]['count'] += 1
                         for bug_data in summary_revision_job_type['bugzilla_data']:
                             if args.bugs and args.override_bug_summary:
-                                pattern = convert_bug_summary_to_pattern(munge_failure(args.override_bug_summary))
+                                #pattern = convert_failure_to_pattern(bugzilla_summary_munge_failure(args.override_bug_summary))
+                                pattern = convert_failure_to_pattern(args.override_bug_summary)
                             else:
                                 pattern = bug_data['pattern']
                             if re.compile(pattern).search(failure):
@@ -490,22 +553,22 @@ def summarize_isolation_pushes_jobs_json(args):
                                 summary_revision_job_type_section['failure_reproduced'] += 1
 
                             test = get_test(failure)
+                            if test:
+                                if test not in summary_revision_job_type_section['tests']:
+                                    summary_revision_job_type_section['tests'][test] = dict(
+                                        count = 0,
+                                        test_reproduced = 0,
+                                    )
 
-                            if test not in summary_revision_job_type_section['tests']:
-                                summary_revision_job_type_section['tests'][test] = {
-                                    'count': 0,
-                                }
-                                summary_revision_job_type_section['tests'][test]['test_reproduced'] = 0
-
-                            summary_revision_job_type_section['tests'][test]['count'] += 1
-                            if args.bugs and args.override_bug_summary:
-                                bug_data_test = get_test(args.override_bug_summary)
-                            else:
-                                bug_data_test = bug_data['test']
-                            if test and bug_data_test and test in bug_data_test:
-                                bug_data['test_reproduced'][section_name] += 1
-                                summary_revision_job_type_section['tests'][test]['test_reproduced'] += 1
-                                summary_revision_job_type_section['test_reproduced'] += 1
+                                summary_revision_job_type_section['tests'][test]['count'] += 1
+                                if args.bugs and args.override_bug_summary:
+                                    bug_data_test = get_test(args.override_bug_summary)
+                                else:
+                                    bug_data_test = bug_data['test']
+                                if bug_data_test and test in bug_data_test:
+                                    bug_data['test_reproduced'][section_name] += 1
+                                    summary_revision_job_type_section['tests'][test]['test_reproduced'] += 1
+                                    summary_revision_job_type_section['test_reproduced'] += 1
 
                 summary_revision_job_type_section['run_time'] = run_time
                 summary_revision_job_type_section['jobs_testfailed'] = jobs_testfailed_count
@@ -572,7 +635,7 @@ def convert_pushes_to_test_isolation_bugzilla_data(args, pushes):
             isolation_type = is_isolation_job_type_symbol(job_type_symbol)
             if isolation_group or isolation_type:
                 job_type_name = job['job_type_name']
-                if job_type_name not in data:
+                if job_type_name not in revision_data:
                     revision_data[job_type_name] = {
                         'original': [],
                         'repeated': [],
@@ -608,17 +671,27 @@ def convert_pushes_to_test_isolation_bugzilla_data(args, pushes):
 
 
 def output_csv_summary(args, summary):
-    properties = ('jobs_total', 'jobs_testfailed', 'run_time',)
+    """Output a csv file summarizing the test isolation results.
 
-    line = 'revision;job_type_name;bug;bugmap;summary;failure_count;'
+    Note that a semi-colon (;) is used to delimit fields instead of a
+    comma (,) due to the embedded commas in the bug summaries. Also
+    double quotes are not used to delimit text fields since the data
+    contains embedded quotes in the bug summaries.
+
+    """
+    line = ('job;revision;job type_name;bug;bugmap;summary;failure;test;'
+            'has failure;has test;has bugzilla suggestions;failure count;')
 
     for section_name in (ORIGINAL_SECTIONS + ISOLATION_SECTIONS):
-        for property_name in properties:
-            line += '%s.%s;' % (section_name, property_name)
 
-    for section_name in (ORIGINAL_SECTIONS + ISOLATION_SECTIONS):
-        line += '%s.bug_data.failure_reproduced;' % section_name
-        line += '%s.bug_data.test_reproduced;' % section_name
+        line += ('{section_name} run time;'
+                 '{section_name} jobs total;'
+                 '{section_name} jobs testfailed;'
+                 '{section_name} jobs testfailed per job;'
+                 '{section_name}_failures reproduced;'
+                 '{section_name} failures reproduced per job;'
+                 '{section_name}_tests reproduced;'
+                 '{section_name} tests reproduced per job;'.format(section_name=section_name))
 
     line = line[0:-1]
     print(line)
@@ -627,37 +700,78 @@ def output_csv_summary(args, summary):
         summary_revision = summary[revision_url]
         for job_type_name in summary_revision:
             summary_revision_job_type = summary_revision[job_type_name]
+            job_url = summary_revision_job_type['isolation_job']
             for bug_data in summary_revision_job_type['bugzilla_data']:
+                if bug_data['job_type_name'] != job_type_name:
+                    # XXX: Change the data structure so we don't have mixups like this.
+                    continue
                 bug_id = bug_data['bug_id']
-                if args.override_bug_summary:
-                    bug_summary = munge_failure(args.override_bug_summary)
+                bug_summary = bug_data['bug_summary'].replace(';', ' ')
+                failure = bug_data['mozharness_failure']
+                if failure is not None:
+                    failure = failure.replace(';', ' ')
+                    has_failure = True
                 else:
-                    bug_summary = bug_data['bug_summary'].replace(';', ' ')
+                    has_failure = False
+
+                test = bug_data['test']
+                if test is not None:
+                    test = test.replace(';', ' ')
+                    has_test = True
+                else:
+                    has_test = False
+                bugzilla_suggestions = (len(bug_data['bugzilla_suggestions']) > 0)
                 failure_count = bug_data['failure_count']
                 bug_job_map = summary_revision_job_type['original']['bug_job_map']
                 bugs = ','.join(sorted(set([ str(job_bug['bug_id']) for job_bug in bug_job_map ])))
-                if bugs and str(bug_id) not in bugs:
-                    # Ignore other bugs filed for this revision if they are not in the
-                    # current job bug map but only if there are other bugs filed.
-                    continue
-                line = '%s;%s;%s;%s;%s;%s;' % (
-                    revision_url, job_type_name, bug_id, bugs, bug_summary, failure_count)
+                #if bugs and str(bug_id) not in bugs:
+                #    # Ignore other bugs filed for this revision if they are not in the
+                #    # current job bug map but only if there are other bugs filed.
+                #    continue
+
+                line =  '{};'.format(job_url)
+                line += '{};'.format(revision_url)
+                line += '{};'.format(job_type_name)
+                line += '{};'.format(bug_id)
+                line += '{};'.format(bugs)
+                line += '{};'.format(bug_summary)
+                line += '{};'.format(failure)
+                line += '{};'.format(test)
+                line += '{};'.format(has_failure)
+                line += '{};'.format(has_test)
+                line += '{};'.format(bugzilla_suggestions)
+                line += '{};'.format(failure_count)
 
                 for section_name in (ORIGINAL_SECTIONS + ISOLATION_SECTIONS):
                     summary_revision_job_type_section = summary_revision_job_type[section_name]
-                    for property_name in properties:
-                        line += '%s;' % summary_revision_job_type_section[property_name]
 
-                for section_name in (ORIGINAL_SECTIONS + ISOLATION_SECTIONS):
-                    line += '%s;' % bug_data['failure_reproduced'][section_name]
-                    line += '%s;' % bug_data['test_reproduced'][section_name]
+                    run_time = summary_revision_job_type_section['run_time']
+
+                    jobs_total = summary_revision_job_type_section['jobs_total']
+                    jobs_testfailed = summary_revision_job_type_section['jobs_testfailed']
+                    jobs_testfailed_per_job = jobs_testfailed/jobs_total if jobs_total > 0 else 0
+
+                    failures_reproduced = bug_data['failure_reproduced'][section_name]
+                    failures_reproduced_per_job = failures_reproduced/jobs_total if jobs_total > 0 else 0
+
+                    tests_reproduced = bug_data['test_reproduced'][section_name]
+                    tests_reproduced_per_job = tests_reproduced/jobs_total if jobs_total > 0 else 0
+
+                    line += '{};'.format(run_time)
+                    line += '{};'.format(jobs_total)
+                    line += '{};'.format(jobs_testfailed)
+                    line += '{:.2f};'.format(jobs_testfailed_per_job)
+                    line += '{};'.format(failures_reproduced)
+                    line += '{:.2f};'.format(failures_reproduced_per_job)
+                    line += '{};'.format(tests_reproduced)
+                    line += '{:.2f};'.format(tests_reproduced_per_job)
 
                 line = line[0:-1]
                 print(line)
 
 
 def output_csv_results(args, summary):
-    print('revision;job_type_name;section;result_type;result_name;count;reproduced')
+    print('revision,job_type_name,section,result_type,result_name,count,reproduced')
 
     for revision_url in summary:
         summary_revision = summary[revision_url]
@@ -669,7 +783,7 @@ def output_csv_results(args, summary):
                 if args.include_failures:
                     for failure_message in summary_revision_job_type_section['failures']:
                         failure = summary_revision_job_type_section['failures'][failure_message]
-                        print('%s;%s;%s;%s;%s;%s;%s' % (
+                        print('{};{};{};{};{};{};{}'.format(
                             revision_url,
                             job_type_name,
                             section_name,
@@ -680,7 +794,7 @@ def output_csv_results(args, summary):
                 if args.include_tests:
                     for test_name in summary_revision_job_type_section['tests']:
                         test = summary_revision_job_type_section['tests'][test_name]
-                        print('%s;%s;%s;%s;%s;%s;%s' % (
+                        print('{};{};{};{};{};{};{}'.format(
                             revision_url,
                             job_type_name,
                             section_name,
@@ -692,6 +806,7 @@ def output_csv_results(args, summary):
 
 def main():
     """main"""
+    global logger
 
     parent_parsers = [
         log_level_args.get_parser(),
@@ -777,7 +892,7 @@ Each argument and its value must be on separate lines in the file.
         help='Starting creation time in YYYY-MM-DD or '
         'YYYY-MM-DDTHH:MM:SSTZ format. '
         'Example 2019-07-27T17:28:00PDT or 2019-07-28T00:28:00Z',
-        default='2019-06-14')
+        default='2019-06-01T00:00:00Z')
 
     parser.add_argument(
         '--bugs-after',
@@ -835,7 +950,7 @@ Each argument and its value must be on separate lines in the file.
     if args.test_failure_pattern:
         args.test_failure_pattern = re.compile(args.test_failure_pattern)
 
-    if (args.whiteboard != '[test isolation]' or args.override_bug_summary) and not args.bugs:
+    if ('test isolation' not in args.whiteboard or args.override_bug_summary) and not args.bugs:
         parser.error('--bug must be specified if either --whiteboard or '
                      '--override-test are specified.')
 

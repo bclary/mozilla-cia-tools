@@ -55,6 +55,9 @@ class RequestsWrapper(object):
                     break
                 if response.status_code == 503:
                     logger.error('HTTP 503 Server too busy. Will retry {}.'.format(url))
+                elif response.status_code == 504:
+                    logger.error('HTTP 503 Server Gateway Timeout. Aborting attempt {}.'.format(url))
+                    break
                 else:
                     response.raise_for_status()
             except (requests.ConnectionError, requests.ConnectTimeout):
@@ -74,6 +77,9 @@ class RequestsWrapper(object):
                     break
                 if response.status_code == 503:
                     logger.error('HTTP 503 Server too busy. Will retry {}.'.format(url))
+                elif response.status_code == 504:
+                    logger.error('HTTP 503 Server Gateway Timeout. Aborting attempt {}.'.format(url))
+                    break
                 else:
                     response.raise_for_status()
             except (requests.ConnectionError, requests.ConnectTimeout):
@@ -150,23 +156,10 @@ def download_file(url, dest, params=None, max_attempts=3):
                     dest_file.write(chunk)
             return
 
-    for attempt in range(max_attempts):
-        try:
-            response = requestswrapper._get(url, mimetype=BINARY, stream=True, params=params)
-            with open(dest, 'wb') as dest_file:
-                for chunk in response.iter_content(chunk_size=10485760):
-                    dest_file.write(chunk)
-            break
-        except requests.exceptions.HTTPError as e:
-            if '503 Server Error' not in e.message:
-                raise
-            logger.exception("utils.download_file(%s, %s): attempt %s", url, dest, attempt)
-        except requests.exceptions.ConnectionError:
-            logger.exception("utils.download_file(%s, %s): attempt %s", url, dest, attempt)
-        if attempt != max_attempts - 1:
-            time.sleep(60 + random.randrange(0, 30, 1))
-    if attempt == max_attempts - 1:
-        logger.error("utils.download_file(%s, %s): giving up", url, dest)
+    response = requestswrapper._get(url, mimetype=BINARY, stream=True, params=params)
+    with open(dest, 'wb') as dest_file:
+        for chunk in response.iter_content(chunk_size=10485760):
+            dest_file.write(chunk)
 
 
 def date_to_timestamp(dateval):
