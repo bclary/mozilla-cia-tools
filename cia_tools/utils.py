@@ -10,6 +10,7 @@ import copy
 import datetime
 import json
 import logging
+import os
 import random
 import time
 
@@ -21,6 +22,9 @@ logger = logging.getLogger(__name__)
 TEXT = 'text/plain'
 JSON = 'application/json'
 BINARY = 'application/octet-stream'
+
+def wait():
+    time.sleep(random.randrange(0, 30, 1))
 
 class RequestsWrapper(object):
 
@@ -45,47 +49,61 @@ class RequestsWrapper(object):
         }
         self.session = requests.Session()
 
-    def _get(self, url, mimetype='application/octet-stream', stream=False, **params):
+    def _get(self, url, mimetype='application/octet-stream', stream=False, max_attempts=3, **params):
 
         headers = self.headers.get(mimetype, {})
-        while True:
+        attempt = 0
+        while attempt < max_attempts:
+            attempt += 1
+            response = None
             try:
                 response = self.session.get(url, headers=headers, stream=stream, **params)
-                if response.ok:
+                if not response:
+                    logger.error('_get: No response: Attempt {}/{}, {}.'.format(attempt, max_attempts, url))
+                elif response.ok:
                     break
-                if response.status_code == 503:
-                    logger.error('HTTP 503 Server too busy. Will retry {}.'.format(url))
+                elif response.status_code == 503:
+                    logger.error('_get: HTTP 503 Server too busy. Attempt {}/{}, {}.'.format(attempt, max_attempts, url))
                 elif response.status_code == 504:
-                    logger.error('HTTP 503 Server Gateway Timeout. Aborting attempt {}.'.format(url))
+                    logger.error('HTTP 504 Server Gateway Timeout. Attempt {}/{}, Aborting {}.'.format(attempt, max_attempts, url))
                     break
                 else:
                     response.raise_for_status()
-            except (requests.ConnectionError, requests.ConnectTimeout):
-                logger.error('Will retry {}'.format(url), exc_info=1)
-            # Wait and try again.
-            time.sleep(60 + random.randrange(0, 30, 1))
+            except (requests.ConnectionError, requests.ConnectTimeout) as e:
+                logger.error('_get: {}: Attempt {}/{}, {}'.format(e.__class__.__name__, attempt, max_attempts, url))
+            wait()
+
+        if attempt == max_attempts:
+            logger.error('_get: Exceeded Maximum Attempts {}/{}, Aborting {}.'.format(attempt, max_attempts, url))
 
         return response
 
-    def _post(self, url, data=None, stream=False, **params):
+    def _post(self, url, data=None, stream=False, max_attempts=3, **params):
 
         headers = {'user-agent': self._user_agent}
-        while True:
+        attempt = 0
+        while attempt < max_attempts:
+            attempt += 1
+            response = None
             try:
                 response = self.session.post(url, headers=headers, stream=stream, **params)
-                if response.ok:
+                if not response:
+                    logger.error('_post: No response: Attempt {}/{}, {}.'.format(attempt, max_attempts, url))
+                elif response.ok:
                     break
-                if response.status_code == 503:
-                    logger.error('HTTP 503 Server too busy. Will retry {}.'.format(url))
+                elif response.status_code == 503:
+                    logger.error('_post: HTTP 503 Server too busy. Attempt {}/{}, {}.'.format(attempt, max_attempts, url))
                 elif response.status_code == 504:
-                    logger.error('HTTP 503 Server Gateway Timeout. Aborting attempt {}.'.format(url))
+                    logger.error('_post: HTTP 504 Server Gateway Timeout. Aborting {}.'.format(url))
                     break
                 else:
                     response.raise_for_status()
-            except (requests.ConnectionError, requests.ConnectTimeout):
-                logger.error('Will retry {}'.format(url), exc_info=1)
-            # Wait and try again.
-            time.sleep(60 + random.randrange(0, 30, 1))
+            except (requests.ConnectionError, requests.ConnectTimeout) as e:
+                logger.error('_post: {}: Attempt {}/{}, {}'.format(e.__class__.__name__, attempt, max_attempts, url))
+            wait()
+
+        if attempt == max_attempts:
+            logger.error('_post: Exceeded Maximum Attempts {}/{}, Aborting {}.'.format(attempt, max_attempts, url))
 
         return response
 
@@ -108,7 +126,7 @@ def get_remote_text(url, stream=False, params=None):
             return local_file.read()
 
     response = requestswrapper._get(url, mimetype=TEXT, stream=stream, **params)
-    if response.ok:
+    if response and response.ok:
         return response.text
     return None
 
@@ -127,14 +145,14 @@ def get_remote_json(url, stream=False, params=None):
             return json.loads(local_file.read())
 
     response = requestswrapper._get(url, mimetype=JSON, stream=stream, params=params)
-    if response.ok:
+    if response and response.ok:
         return response.json()
     return None
 
 
 # download_file() cloned from autophone's urlretrieve()
 
-def download_file(url, dest, params=None, max_attempts=3):
+def download_file(url, dest, params=None, max_attempts=3, overwrite=True):
     """Download file from url and save to dest.
 
     :param: url: string url to file to download.
@@ -143,7 +161,12 @@ def download_file(url, dest, params=None, max_attempts=3):
     :param dest: string path where to save file.
     :max_attempts: integer number of times to attempt download.
                    Defaults to 3.
+    :overwrite: bool indicating if the file already exists it should
+            still be downloaded. Defaults to False.
     """
+    if os.path.exists(dest) and not overwrite:
+        return
+
     parse_result = urlparse(url)
     if not parse_result.scheme or parse_result.scheme.startswith('file'):
         local_file = open(parse_result.path)
@@ -157,10 +180,11 @@ def download_file(url, dest, params=None, max_attempts=3):
             return
 
     response = requestswrapper._get(url, mimetype=BINARY, stream=True, params=params)
-    with open(dest, 'wb') as dest_file:
-        for chunk in response.iter_content(chunk_size=10485760):
-            dest_file.write(chunk)
 
+    if response:
+        with open(dest, 'wb') as dest_file:
+            for chunk in response.iter_content(chunk_size=10485760):
+                dest_file.write(chunk)
 
 def date_to_timestamp(dateval):
     """
