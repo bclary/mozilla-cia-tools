@@ -71,6 +71,7 @@ def analyze_logs(args):
     filepaths.sort()
     nfilepaths = len(filepaths)
     re_runs = re.compile(r'.*/runs/([0-9])/.*')
+    regx_value = re.compile(r'[^0-9]*$')
     for i in range(nfilepaths):
         # Note the filepath looks like
         # output directory/revision/job_guid/job_guid_run/path_dir/file_name
@@ -239,6 +240,7 @@ def analyze_logs(args):
                     value = match.group(3)
                     if '<em class=\"testfail\">' in value:
                         value = value.replace('<em class=\"testfail\">', '').replace('</em>', '')
+                    value = regx_value.sub('', value)
                     unittest_fail = int(value)
                     if unittest_suite not in data_revision[job_type_name]:
                         # Support multiple geckoview_junit / jittest summary lines per file.
