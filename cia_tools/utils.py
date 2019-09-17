@@ -59,7 +59,8 @@ class RequestsWrapper(object):
             try:
                 response = self.session.get(url, headers=headers, stream=stream, **params)
                 if not response:
-                    logger.error('_get: No response: Attempt {}/{}, {}.'.format(attempt, max_attempts, url))
+                    logger.error('_get: No response: Attempt {}/{}, Aborting {}.'.format(attempt, max_attempts, url))
+                    break
                 elif response.ok:
                     break
                 elif response.status_code == 503:
@@ -88,7 +89,8 @@ class RequestsWrapper(object):
             try:
                 response = self.session.post(url, headers=headers, stream=stream, **params)
                 if not response:
-                    logger.error('_post: No response: Attempt {}/{}, {}.'.format(attempt, max_attempts, url))
+                    logger.error('_post: No response: Attempt {}/{}, Aborting {}.'.format(attempt, max_attempts, url))
+                    break
                 elif response.ok:
                     break
                 elif response.status_code == 503:
