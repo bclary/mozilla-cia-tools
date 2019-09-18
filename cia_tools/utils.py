@@ -18,13 +18,51 @@ from urllib.parse import urlparse
 
 import requests
 
+
 logger = logging.getLogger(__name__)
 TEXT = 'text/plain'
 JSON = 'application/json'
 BINARY = 'application/octet-stream'
 
+
 def wait():
     time.sleep(random.randrange(0, 30, 1))
+
+
+def retry_request(func, max_attempts, *args, **kwargs):
+    """Retry executing a function which returns request Response object
+    and which can raise request Exceptions."""
+    attempt = 0
+    response = None
+    while attempt < max_attempts:
+        attempt += 1
+        try:
+            response = func(*args, **kwargs)
+            if not response:
+                logger.error('{}: No response: Attempt {}/{}, Aborting {}, {}.'.format(
+                    func.__name__, attempt, max_attempts, args, kwargs))
+                break
+            elif response.ok:
+                break
+            elif response.status_code == 503:
+                logger.error('{}: HTTP 503 Server too busy. Attempt {}/{}, {}, {}.'.format(
+                    func.__name__, attempt, max_attempts, args, kwargs))
+            elif response.status_code == 504:
+                logger.error('{}: HTTP 504 Server Gateway Timeout. Attempt {}/{}, Aborting {}, {}.'.format(
+                    func.__name__, attempt, max_attempts, args, kwargs))
+                break
+            else:
+                response.raise_for_status()
+        except (requests.ConnectionError, requests.ConnectTimeout) as e:
+            logger.error('{}: {}: Attempt {}/{}, {}, {}'.format(
+                func.__name__, e.__class__.__name__, attempt, max_attempts, args, kwargs))
+        wait()
+
+    if attempt == max_attempts - 1:
+        print('Exceeded maximum attempts, aborting {}({}, {})'.format(func.__name__, args, kwargs))
+
+    return response
+
 
 class RequestsWrapper(object):
 
@@ -52,61 +90,13 @@ class RequestsWrapper(object):
     def _get(self, url, mimetype='application/octet-stream', stream=False, max_attempts=3, **params):
 
         headers = self.headers.get(mimetype, {})
-        attempt = 0
-        while attempt < max_attempts:
-            attempt += 1
-            response = None
-            try:
-                response = self.session.get(url, headers=headers, stream=stream, **params)
-                if not response:
-                    logger.error('_get: No response: Attempt {}/{}, Aborting {}.'.format(attempt, max_attempts, url))
-                    break
-                elif response.ok:
-                    break
-                elif response.status_code == 503:
-                    logger.error('_get: HTTP 503 Server too busy. Attempt {}/{}, {}.'.format(attempt, max_attempts, url))
-                elif response.status_code == 504:
-                    logger.error('HTTP 504 Server Gateway Timeout. Attempt {}/{}, Aborting {}.'.format(attempt, max_attempts, url))
-                    break
-                else:
-                    response.raise_for_status()
-            except (requests.ConnectionError, requests.ConnectTimeout) as e:
-                logger.error('_get: {}: Attempt {}/{}, {}'.format(e.__class__.__name__, attempt, max_attempts, url))
-            wait()
-
-        if attempt == max_attempts:
-            logger.error('_get: Exceeded Maximum Attempts {}/{}, Aborting {}.'.format(attempt, max_attempts, url))
-
+        response = retry_request(self.session.get, max_attempts, url, headers=headers, stream=stream, **params)
         return response
 
     def _post(self, url, data=None, stream=False, max_attempts=3, **params):
 
         headers = {'user-agent': self._user_agent}
-        attempt = 0
-        while attempt < max_attempts:
-            attempt += 1
-            response = None
-            try:
-                response = self.session.post(url, headers=headers, stream=stream, **params)
-                if not response:
-                    logger.error('_post: No response: Attempt {}/{}, Aborting {}.'.format(attempt, max_attempts, url))
-                    break
-                elif response.ok:
-                    break
-                elif response.status_code == 503:
-                    logger.error('_post: HTTP 503 Server too busy. Attempt {}/{}, {}.'.format(attempt, max_attempts, url))
-                elif response.status_code == 504:
-                    logger.error('_post: HTTP 504 Server Gateway Timeout. Aborting {}.'.format(url))
-                    break
-                else:
-                    response.raise_for_status()
-            except (requests.ConnectionError, requests.ConnectTimeout) as e:
-                logger.error('_post: {}: Attempt {}/{}, {}'.format(e.__class__.__name__, attempt, max_attempts, url))
-            wait()
-
-        if attempt == max_attempts:
-            logger.error('_post: Exceeded Maximum Attempts {}/{}, Aborting {}.'.format(attempt, max_attempts, url))
-
+        response = retry_request(self.session.post, max_attempts, url, headers=headers, stream=stream, **params)
         return response
 
 
