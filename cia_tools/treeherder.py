@@ -22,6 +22,33 @@ URL = None
 logger = logging.getLogger()
 
 
+def retry_client_request(func, max_attempts, *args, **kwargs):
+    """Retry executing a function which calls Treeherder's client which
+    can raise request Exceptions."""
+    attempt = 0
+    result = None
+    while attempt < max_attempts:
+        attempt += 1
+        try:
+            result = func(*args, **kwargs)
+            break
+        except requests.HTTPError as e:
+            if '503 Server Error' not in str(e):
+                raise
+            logger.error('{}: HTTP 503 Server too busy. Attempt {}/{}.'.format(
+                             func.__name__, attempt, max_attempts))
+        except (requests.ConnectionError, requests.ConnectTimeout) as e:
+            logger.error('{}: {}: Attempt {}/{}'.format(
+                func.__name.__, e.__class__.__name__, attempt, max_attempts))
+        utils.wait()
+
+    if attempt == max_attempts - 1:
+        logger.error('Exceeded maximum attempts, aborting {}({}, {})'.format(
+            func.__name__, args, kwargs))
+
+    return result
+
+
 def init_treeherder(treeherder_url):
     global CLIENT, URL, REPOSITORIES
 
@@ -80,18 +107,11 @@ def get_pushes_json(args, repo, update_cache=False):
     # We need to fudge this.
     max_count = CLIENT.MAX_COUNT
     CLIENT.MAX_COUNT = 1000
-    while True:
-        try:
-            all_pushes = CLIENT.get_pushes(repo, **push_params)
-            break
-        except requests.HTTPError as e:
-            if '503 Server Error' not in str(e):
-                raise
-            logger.exception('get_pushes_json: retrying in 30 seconds.')
-        except requests.ConnectionError:
-            logger.exception("get_pushes_json: retrying in 30 seconds")
-        time.sleep(30)
-    CLIENT.MAX_COUNT = max_count
+    try:
+        all_pushes = retry_client_request(CLIENT.get_pushes, 3, repo, **push_params)
+    finally:
+        CLIENT.MAX_COUNT = max_count
+
     for push in all_pushes:
         cache.save(cache_attributes, push['id'], json.dumps(push, indent=2))
 
@@ -125,17 +145,8 @@ def get_push_json(args, repo, push_id, update_cache=False):
         if push_data:
             push = json.loads(push_data)
             return push
-    while True:
-        try:
-            pushes = CLIENT.get_pushes(repo, **push_params)
-            break
-        except requests.HTTPError as e:
-            if '503 Server Error' not in str(e):
-                raise
-            logger.exception('get_push_json: retrying in 30 seconds.')
-        except requests.ConnectionError:
-            logger.exception("get_push_json: retrying in 30 seconds")
-        time.sleep(30)
+
+    pushes = retry_client_request(CLIENT.get_pushes, 3, repo, **push_params)
     if pushes:
         return pushes[0]
     return None
@@ -157,17 +168,7 @@ def get_pushes_jobs_json(args, repo, update_cache=False):
         if push_jobs_data and not update_cache:
             jobs = json.loads(push_jobs_data)
         else:
-            while True:
-                try:
-                    jobs = CLIENT.get_jobs(repo, push_id=push['id'], count=None)
-                    break
-                except requests.HTTPError as e:
-                    if '503 Server Error' not in str(e):
-                        raise
-                    logger.exception('get_pushes_jobs_json: retrying in 30 seconds.')
-                except requests.ConnectionError:
-                    logger.exception("get_pushes_jobs_json: retrying in 30 seconds")
-                time.sleep(30)
+            jobs = retry_client_request(CLIENT.get_jobs, 3, repo, push_id=push['id'], count=None)
             cache.save(cache_attributes_push_jobs, push['id'], json.dumps(jobs, indent=2))
 
         if not args.job_filters:
@@ -213,20 +214,8 @@ def get_pushes_jobs_job_details_json(args, repo, update_cache=False):
                 job['job_details'] = []
                 # We can get all of the job details from CLIENT.get_job_details while
                 # get_job_log_url only gives us live_backing.log and live.log.
-                # Attempt up to 3 times to work around connection failures.
-                for attempt in range(3):
-                    try:
-                        job['job_details'] = CLIENT.get_job_details(job_guid=job['job_guid'])
-                        break
-                    except requests.HTTPError as e:
-                        if '503 Server Error' not in str(e):
-                            raise
-                        logger.exception('get_job_details attempt %s', attempt)
-                    except requests.ConnectionError:
-                        logger.exception('get_job_details attempt %s', attempt)
-                    if attempt != 2:
-                        time.sleep(30)
-                if attempt == 2:
+                job['job_details'] = retry_client_request(CLIENT.get_job_details, 3, job_guid=job['job_guid'])
+                if job['job_details'] is None:
                     logger.warning("Unable to get job_details for job_guid %s",
                                    job['job_guid'])
                     continue
@@ -270,23 +259,14 @@ def get_job_by_repo_job_id_json(args, repo, job_id, update_cache=False):
     """
     cache_attributes = ['treeherder', repo, 'jobs']
 
-    while True:
-        try:
-            job_data = cache.load(cache_attributes, job_id)
-            if job_data and not update_cache:
-                jobs = [json.loads(job_data)]
-            else:
-                jobs = CLIENT.get_jobs(repo, id=job_id)
-                for job in jobs:
-                    cache.save(cache_attributes, job['id'], json.dumps(job, indent=2))
-            break
-        except requests.HTTPError as e:
-            if '503 Server Error' not in str(e):
-                raise
-            logger.exception('get_job_by_repo_job_id_json: retrying in 30 seconds.')
-        except requests.ConnectionError:
-            logger.exception("get_job_by_repo_job_id_json: retrying in 30 seconds")
-        time.sleep(30)
+    job_data = cache.load(cache_attributes, job_id)
+    if job_data and not update_cache:
+        jobs = [json.loads(job_data)]
+    else:
+        jobs = retry_client_request(CLIENT.get_jobs, 3, repo, id=job_id)
+        if jobs:
+            for job in jobs:
+                cache.save(cache_attributes, job['id'], json.dumps(job, indent=2))
 
     return jobs[0]
 
