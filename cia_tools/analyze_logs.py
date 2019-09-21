@@ -123,20 +123,23 @@ def analyze_logs(args):
         if test_suite not in test_suite_status:
             test_suite_status[test_suite] = set()
 
-        jobsymbol = metadata['jobsymbol']
         job_type_name = metadata['testplatform'] + '/' + metadata['buildtype'] + '-'
-        if args.dechunk:
+        if not args.dechunk:
+            job_type_name += metadata['testsuite']
+        else:
             job_type_name += re.sub('(-[0-9]+)?$', '', metadata['testsuite'])
+            jobsymbol = metadata['jobsymbol']
             isolation_match = re_isolation_jobsymbol.match(jobsymbol)
             if isolation_match:
-                # Remove the trailing chunk from the jobsymbol then re-add the
-                # isolation type.
+                # If we are processing a test isolation job, add the isolation type to the
+                # "job_type_name" to distinguish from normal builds.
                 (jobsymbol, isolation_type) = isolation_match.groups()
-                jobsymbol = re.sub('(-?[0-9]+)?$', '', jobsymbol) + '-' + isolation_type
-        else:
-            job_type_name += metadata['testsuite']
-
-        job_type_name += '/' + jobsymbol
+                jobsymbol = re.sub('(-?[0-9]+)?$', '', jobsymbol)
+                if jobsymbol:
+                    jobsymbol += '-' + isolation_type
+                else:
+                    jobsymbol = isolation_type
+                job_type_name += '/' + jobsymbol
 
         data_revision = {
             job_type_name: {},
