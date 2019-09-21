@@ -14,6 +14,8 @@ import logging
 import os
 import re
 
+import taskcluster
+
 from numbers import Number
 
 from common_args import ArgumentFormatter, log_level_args
@@ -22,8 +24,10 @@ from common_args import ArgumentFormatter, log_level_args
 def analyze_logs(args):
     logger = logging.getLogger()
 
-    re_taskcluster = re.compile(r"(\[taskcluster:.*\].*)")
+    re_taskcluster = re.compile(r"(\[taskcluster.*)")
     re_taskcluster_wall_time = re.compile(r"\[taskcluster.*Wall Time: (?:(.*)h)?(?:(.*)m)?(?:(.*)s)")
+    re_taskcluster_taskId = re.compile(r"\[taskcluster.*Task ID: (.*)")
+    re_taskcluster_completed = re.compile(r"\[taskcluster.*(Unsuccessful|Successful) task run with exit code: ([0-9]+) completed in ([0-9.]+) seconds")
     re_revision_env = re.compile(r"(MOZ_SOURCE_CHANGESET|GECKO_HEAD_REV)(=|': ')([\w-]+)")
     re_revision_checkout = re.compile(r"'--revision', '([\w-]+)'")
     re_tinderbox_summary = re.compile(r"TinderboxPrint: ([^<]+)<br/>(.*)")
@@ -61,6 +65,8 @@ def analyze_logs(args):
     ### test isolation ###
     re_isolation_jobsymbol = re.compile(r'(.*)-(it|id)$')
     ######################
+
+    taskcluster_queue = taskcluster.Queue({'rootUrl': 'https://taskcluster.net'})
 
     data = {}
     tinderbox_print_keys = set()
@@ -158,27 +164,41 @@ def analyze_logs(args):
             for line in logfile:
                 line = line.strip()
 
-                # Get any taskcluster messages
-                match = re_taskcluster.match(line)
-                if match:
+                # Collect taskcluster data
+                if line.startswith('[taskcluster'):
                     if "taskcluster" not in data_revision[job_type_name]:
                         data_revision[job_type_name]["taskcluster"] = []
-                    taskcluster_message = match.group(1)
+                    taskcluster_message = line
                     data_revision[job_type_name]["taskcluster"].append(taskcluster_message)
+
+                    match = re_taskcluster_wall_time.match(line)
+                    if match:
+                        (hours, minutes, seconds) = match.groups()
+                        if "taskcluster_wall_time" not in data_revision[job_type_name]:
+                            data_revision[job_type_name]["taskcluster_walltime"] = 0
+                            if hours:
+                                data_revision[job_type_name]["taskcluster_walltime"] += 3600*float(hours)
+                            if minutes:
+                                data_revision[job_type_name]["taskcluster_walltime"] += 60*float(minutes)
+                            if seconds:
+                                data_revision[job_type_name]["taskcluster_walltime"] += float(seconds)
+                    else:
+                        match = re_taskcluster_taskId.match(line)
+                        if match:
+                            taskId = match.groups(1)
+                            data_revision[job_type_name]["taskcluster_taskId"] = taskId
+                        else:
+                            match = re_taskcluster_completed.match(line)
+                            if match:
+                                (taskcluster_status, taskcluster_exitcode, taskcluster_runtime) = match.groups()
+                                data_revision[job_type_name]["taskcluster_status"] = taskcluster_status
+                                data_revision[job_type_name]["taskcluster_exitcode"] = taskcluster_exitcode
+                                try:
+                                    data_revision[job_type_name]["taskcluster_runtime"] = float(taskcluster_runtime)
+                                except ValueError:
+                                    data_revision[job_type_name]["taskcluster_runtime"] = 0
                     continue
-                # Get any taskcluster Wall Timemessages
-                match = re_taskcluster_wall_time.match(line)
-                if match:
-                    (hours, minutes, seconds) = match.groups()
-                    if "taskcluster_wall_time" not in data_revision[job_type_name]:
-                        data_revision[job_type_name]["taskcluster_walltime"] = 0
-                        if hours:
-                            data_revision[job_type_name]["taskcluster_walltime"] += 3600*float(hours)
-                        if minutes:
-                            data_revision[job_type_name]["taskcluster_walltime"] += 60*float(minutes)
-                        if seconds:
-                            data_revision[job_type_name]["taskcluster_walltime"] += float(seconds)
-                    continue
+
                 # Next Collect the revision. It will appear before any tests or the summary.
                 if not revision:
                     match = re_revision_env.search(line)
