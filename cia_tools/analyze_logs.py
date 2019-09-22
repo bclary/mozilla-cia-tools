@@ -468,7 +468,7 @@ Each argument and its value must be on separate lines in the file.
     if args.raw:
         print(data)
     else:
-        print(json.dumps(data, indent=2))
+        print(json.dumps(data, indent=2, sort_keys=True))
 
 if __name__ == '__main__':
     main()
