@@ -179,6 +179,11 @@ def generate_difference(re_ignore, left, right):
                         # case for perfherder. First attempt to find the pair
                         # left_value_item['name'] == right_value[rindex]['name']
                         left_value_item_name = left_value_item.get('name', None)
+                        # If name is not available, attempt framework...
+                        if not left_value_item_name:
+                            framework = left_value_item.get('framework', None)
+                            if framework:
+                                left_value_item_name = framework['name']
                         right_value_item_name = None
                         if left_value_item_name:
                             # find the right_value item which has the same name value
@@ -186,19 +191,23 @@ def generate_difference(re_ignore, left, right):
                             for right_value_item in right_value:
                                 rindex +=1
                                 right_value_item_name = right_value_item.get('name', None)
+                                if not right_value_item_name:
+                                    framework = right_value_item.get('framework', None)
+                                    if framework:
+                                        right_value_item_name = framework['name']
                                 if left_value_item_name == right_value_item_name:
                                     break
-                        if left_value_item_name == right_value_item_name:
-                            del right_value[rindex]
-                            left_right_difference = generate_difference(re_ignore, left_value_item, right_value_item)
-                            if left_right_difference:
-                                key_difference.append(left_right_difference)
-                        #else:
-                        #    # No name key, just do the list items in order
-                        #    try:
-                        #        right_value_item = right_value.pop(0)
-                        #    except IndexError:
-                        #        right_value_item = None
+                            if left_value_item_name == right_value_item_name:
+                                del right_value[rindex]
+                                left_right_difference = generate_difference(re_ignore, left_value_item, right_value_item)
+                                if left_right_difference:
+                                    key_difference.append(left_right_difference)
+                            #else:
+                            #    # No name key, just do the list items in order
+                            #    try:
+                            #        right_value_item = right_value.pop(0)
+                            #    except IndexError:
+                            #        right_value_item = None
                     while right_value:
                         right_value_item = right_value.pop(0)
                         key_difference.append(generate_difference(re_ignore, None, right_value_item))
