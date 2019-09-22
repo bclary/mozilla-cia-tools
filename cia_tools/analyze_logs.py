@@ -21,6 +21,54 @@ from numbers import Number
 from common_args import ArgumentFormatter, log_level_args
 
 
+def combine_dict(left, right, **kwargs):
+    """Modeled on dict.update([E, ], **F)
+    Help on method_descriptor:
+
+    update(...)
+        D.update([E, ]**F) -> None.  Update D from dict/iterable E and F.
+        If E present and has a .keys() method, does:     for k in E: D[k] = E[k]
+        If E present and lacks .keys() method, does:     for (k, v) in E: D[k] = v
+        In either case, left is followed by: for k in F: D[k] = F[k]
+    """
+    if right:
+        if hasattr(right, 'keys'):
+            for k in right:
+                right_type = type(right[k])
+                if k in left:
+                    if right_type == str:
+                        left[k] += ';' + right[k]
+                    elif right_type == dict:
+                        combine_dict(left[k], right[k])
+                    else:
+                        left[k] += right[k]
+                else:
+                    left[k] = right[k]
+        else:
+            for (k, v) in right:
+                right_type = type(v)
+                if k in left:
+                    if right_type == str:
+                        left[k] += ';' + v
+                    elif right_type == dict:
+                        combine_dict(left[k], v)
+                    else:
+                        left[k] += v
+                else:
+                    left[k] = v
+    if kwargs:
+        for k in kwargs:
+            right_type = type(kwargs[k])
+            if k in left:
+                if right_type == str:
+                    left[k] += ';'
+                left[k] += kwargs[k]
+            else:
+                left[k] = kwargs[k]
+
+    return left
+
+
 def analyze_logs(args):
     logger = logging.getLogger()
 
@@ -276,10 +324,13 @@ def analyze_logs(args):
                 match = re_perfherder_data.search(line)
                 if match:
                     if 'perfherder_data' not in data_revision[job_type_name]:
-                        data_revision[job_type_name]["perfherder_data"] = {}
+                        data_revision[job_type_name]["perfherder_data"] = []
                     perfherder_data = match.group(1)
-                    data_revision[job_type_name]["perfherder_data"].update(
-                        json.loads(perfherder_data))
+                    #data_revision[job_type_name]["perfherder_data"].update(
+                    #    json.loads(perfherder_data))
+                    #combine_dict(data_revision[job_type_name]["perfherder_data"],
+                    #             json.loads(perfherder_data))
+                    data_revision[job_type_name]["perfherder_data"].append(json.loads(perfherder_data))
                 # Look for the TinderboxPrint summary line.
                 match = re_tinderbox_summary.search(line)
                 if not match:
@@ -309,13 +360,15 @@ def analyze_logs(args):
                         tinderbox_data["skip"] = tinderbox_data["skip"].replace('&nbsp;CRASH', '')
                     for subkey in tinderbox_data:
                         tinderbox_data[subkey] = cast_to_numeric(tinderbox_data[subkey])
-                    data_revision[job_type_name]["tinderbox_data"].update(tinderbox_data)
+                    #data_revision[job_type_name]["tinderbox_data"].update(tinderbox_data)
+                    combine_dict(data_revision[job_type_name]["tinderbox_data"], tinderbox_data)
                 elif 'T-FAIL' in value:
                     T_FAIL = tinderbox_data.get('T-FAIL', 0) + 1
                     data_revision[job_type_name]["tinderbox_data"]['T-FAIL'] = T_FAIL
                 else:
                     tinderbox_data = {key: cast_to_numeric(value.strip())}
-                    data_revision[job_type_name]["tinderbox_data"].update(tinderbox_data)
+                    #data_revision[job_type_name]["tinderbox_data"].update(tinderbox_data)
+                    combine_dict(data_revision[job_type_name]["tinderbox_data"], tinderbox_data)
                 logger.debug("match %s, metadata %s, tinderbox_data %s",
                              match.group(0), metadata, tinderbox_data)
         logger.debug("data_revision %s", data_revision)
