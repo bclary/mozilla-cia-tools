@@ -14,8 +14,6 @@ import logging
 import os
 import re
 
-import taskcluster
-
 from numbers import Number
 
 from common_args import ArgumentFormatter, log_level_args
@@ -72,7 +70,6 @@ def combine_dict(left, right, **kwargs):
 def analyze_logs(args):
     logger = logging.getLogger()
 
-    re_taskcluster = re.compile(r"(\[taskcluster.*)")
     re_taskcluster_wall_time = re.compile(r"\[taskcluster.*Wall Time: (?:(.*)h)?(?:(.*)m)?(?:(.*)s)")
     re_taskcluster_taskId = re.compile(r"\[taskcluster.*Task ID: (.*)")
     re_taskcluster_completed = re.compile(r"\[taskcluster.*(Unsuccessful|Successful) task run with exit code: ([0-9]+) completed in ([0-9.]+) seconds")
@@ -113,8 +110,6 @@ def analyze_logs(args):
     ### test isolation ###
     re_isolation_jobsymbol = re.compile(r'(.*)-(it|id)$')
     ######################
-
-    taskcluster_queue = taskcluster.Queue({'rootUrl': 'https://taskcluster.net'})
 
     data = {}
     tinderbox_print_keys = set()
@@ -444,7 +439,57 @@ def combine_data_revisions(label, left, right):
                 logger.debug("Discarding non numeric value %s: %s: %s", key, label, left_value)
                 combination[key] = right_value
             elif is_tuple_or_list(left_value) and is_tuple_or_list(right_value):
-                combination[key] = list(left_value + right_value)
+                if len(left_value) == 0 or len(right_value) == 0:
+                    combination[key] = list(left_value) + list(right_value)
+                else:
+                    left_value_types = set( [ type(i) for i in left_value ] )
+                    right_value_types = set( [ type(i) for i in right_value ] )
+                    if left_value_types == right_value_types:
+                        if left_value_types == set([type(dict)]):
+                            combination[key] = []
+                            ###
+                            while left_value:
+                                left_value_item = left_value.pop(0)
+                                # See combine_logs.py:generate_difference for similar issue.
+                                # XXX general solution.
+                                # assume the dicts are keyed by name which is the
+                                # case for perfherder. First attempt to find the pair
+                                # left_value_item['name'] == right_value[rindex]['name']
+                                left_value_item_name = left_value_item.get('name', None)
+                                # If name is not available, attempt framework...
+                                if not left_value_item_name:
+                                    framework = left_value_item.get('framework', None)
+                                    if framework:
+                                        left_value_item_name = framework['name']
+                                right_value_item_name = None
+                                if not left_value_item_name:
+                                    combination[key].append(left_value_item_name)
+                                else:
+                                    # find the right_value item which has the same name value
+                                    rindex = -1
+                                    for right_value_item in right_value:
+                                        rindex +=1
+                                        right_value_item_name = right_value_item.get('name', None)
+                                        if not right_value_item_name:
+                                            framework = right_value_item.get('framework', None)
+                                            if framework:
+                                                right_value_item_name = framework['name']
+                                        if left_value_item_name == right_value_item_name:
+                                            break
+                                    if left_value_item_name == right_value_item_name:
+                                        del right_value[rindex]
+                                        left_right_combined = combine_data_revisions(key, left_value_item, right_value_item)
+                                        if left_right_combined:
+                                            combination[key].append(left_right_combined)
+                            while right_value:
+                                right_value_item = right_value.pop(0)
+                                combination[key].append(right_value_item)
+                            ###
+                        else:
+                            combination[key] = list(left_value) + list(right_value)
+                    else:
+                        logger.warning("Mismatched lists items types: %s, %s", left_value_types, right_value_types)
+                        combination[key] = list(left_value) + list(right_value)
             elif is_tuple_or_list(left_value):
                 logger.debug("Discarding non list value %s: %s: %s", key, label, right_value)
                 combination[key] = list(left_value)
@@ -452,9 +497,12 @@ def combine_data_revisions(label, left, right):
                 logger.debug("Discarding non list value %s: %s: %s", key, label, left_value)
                 combination[key] = list(right_value)
             elif type(left_value) != type(right_value):
-                combination[key] = "%s, %s: %s" % (left_value, label, right_value)
+                combination[key] = "%s, %s" % (left_value, right_value)
+            elif left_value != right_value:
+                combination[key] = "%s, %s" % (left_value, right_value)
             else:
-                combination[key] = "%s, %s: %s" % (left_value, label, right_value)
+                combination[key] = left_value
+
         for key in right.keys():
             if key in left:
                 continue
