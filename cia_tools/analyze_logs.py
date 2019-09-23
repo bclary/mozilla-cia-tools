@@ -70,9 +70,9 @@ def combine_dict(left, right, **kwargs):
 def analyze_logs(args):
     logger = logging.getLogger()
 
-    re_taskcluster_wall_time = re.compile(r"\[taskcluster.*Wall Time: (?:(.*)h)?(?:(.*)m)?(?:(.*)s)")
+    re_taskcluster_wall_time = re.compile(r"\[taskcluster.*Wall Time: (?:([.\d]+)h)?(?:([.\d]+)m)?(?:([.\d]+)s)")
     re_taskcluster_taskId = re.compile(r"\[taskcluster.*Task ID: (.*)")
-    re_taskcluster_completed = re.compile(r"\[taskcluster.*(Unsuccessful|Successful) task run with exit code: ([0-9]+) completed in ([0-9.]+) seconds")
+    re_taskcluster_completed = re.compile(r"\[taskcluster.*(Unsuccessful|Successful) task run with exit code: (\d+) completed in ([0-9.]+) seconds")
     re_revision_env = re.compile(r"(MOZ_SOURCE_CHANGESET|GECKO_HEAD_REV)(=|': ')([\w-]+)")
     re_revision_checkout = re.compile(r"'--revision', '([\w-]+)'")
     re_tinderbox_summary = re.compile(r"TinderboxPrint: ([^<]+)<br/>(.*)")
