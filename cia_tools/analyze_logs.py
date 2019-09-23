@@ -425,6 +425,9 @@ def combine_data_revisions(label, left, right):
     elif left is None or left == {}:
         combination = right
     else:
+        def is_tuple_or_list(v):
+            return type(v) == list or type(v) == tuple
+
         for key in left.keys():
             left_value = left[key]
             right_value = right.get(key, None)
@@ -440,14 +443,14 @@ def combine_data_revisions(label, left, right):
             elif isinstance(right_value, Number):
                 logger.debug("Discarding non numeric value %s: %s: %s", key, label, left_value)
                 combination[key] = right_value
-            elif isinstance(left_value, list) and isinstance(right_value, list):
-                combination[key] = left_value + right_value
-            elif isinstance(left_value, list):
+            elif is_tuple_or_list(left_value) and is_tuple_or_list(right_value):
+                combination[key] = list(left_value + right_value)
+            elif is_tuple_or_list(left_value):
                 logger.debug("Discarding non list value %s: %s: %s", key, label, right_value)
-                combination[key] = left_value
-            elif isinstance(right_value, list):
+                combination[key] = list(left_value)
+            elif is_tuple_or_list(right_value):
                 logger.debug("Discarding non list value %s: %s: %s", key, label, left_value)
-                combination[key] = right_value
+                combination[key] = list(right_value)
             elif type(left_value) != type(right_value):
                 combination[key] = "%s, %s: %s" % (left_value, label, right_value)
             else:
