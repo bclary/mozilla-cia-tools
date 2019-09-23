@@ -5,11 +5,12 @@
 
 import argparse
 import json
+import logging
 import re
 
 from numbers import Number
 
-from common_args import ArgumentFormatter
+from common_args import ArgumentFormatter, log_level_args
 
 def compare_aliases(re_ignore, alias_names, data):
     combined_keys = list(data["combined"].keys())
@@ -69,7 +70,10 @@ def _handle_simple_difference(difference, parent_key, re_ignore, left, right):
             # Explicitly handle perfherder replicates.
             handled = True
             for i in range(len(left)):
-                child_difference.append(left[i] - right[i])
+                try:
+                    child_difference.append(left[i] - right[i])
+                except IndexError:
+                    child_difference.append(left[i])
         else:
             try:
                 left.sort()
@@ -128,6 +132,7 @@ def _handle_simple_difference(difference, parent_key, re_ignore, left, right):
 
 
 def generate_difference(re_ignore, left, right):
+    logger = logging.getLogger()
     difference = {}
     if _handle_simple_difference(difference, None, re_ignore, left, right):
         return difference
@@ -162,7 +167,10 @@ def generate_difference(re_ignore, left, right):
                 # Explicitly handle perfherder replicates.
                 key_difference = []
                 for i in range(len(left_value)):
-                    key_difference.append(left_value[i] - right_value[i])
+                    try:
+                        key_difference.append(left_value[i] - right_value[i])
+                    except IndexError:
+                        key_difference.append(left_value[i])
             else:
                 try:
                     left_set = set(left_value)
@@ -185,7 +193,12 @@ def generate_difference(re_ignore, left, right):
                             if framework:
                                 left_value_item_name = framework['name']
                         right_value_item_name = None
-                        if left_value_item_name:
+                        if left_value_item_name is None:
+                            # Note we compare against None here since some perfherder data
+                            # can contain an empty string for the name.
+                            logger.warning("Could not get left_value_name")
+                            key_difference.append(generate_difference(re_ignore, left_value_item, None))
+                        else:
                             # find the right_value item which has the same name value
                             rindex = -1
                             for right_value_item in right_value:
@@ -214,7 +227,7 @@ def generate_difference(re_ignore, left, right):
             if key_difference:
                 difference[key] = key_difference
         else:
-            difference[key] = "%s != %s" % (left, right)
+            difference[key] = "%s != %s" % (left_value, right_value)
 
     left_value = None
     for key in right.keys():
@@ -278,6 +291,8 @@ def munge_test_data(test_data):
         test_data[test_status]['list'] = new_list
 
 def main():
+    log_level_parser = log_level_args.get_parser()
+
     parser = argparse.ArgumentParser(
         description="""Combine analyzed Test Log json files.
 """,
@@ -287,6 +302,7 @@ using the @argfile syntax. The arguments contained in the file will
 replace @argfile in the command line. Multiple files can be loaded
 into the command line through the use of the @ syntax. Each argument
 and its value must be on separate lines in the file.""",
+        parents=[log_level_parser],
         fromfile_prefix_chars='@'
         )
 
@@ -313,6 +329,9 @@ and its value must be on separate lines in the file.""",
                         help="Modify TEST- lines in output to improve comparibility.")
 
     args = parser.parse_args()
+
+    logging.basicConfig(level=getattr(logging, args.log_level))
+    logger = logging.getLogger()
 
     combined_data = {
         "aliases": {},
