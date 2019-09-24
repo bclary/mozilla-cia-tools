@@ -12,6 +12,9 @@ from numbers import Number
 
 from common_args import ArgumentFormatter, log_level_args
 
+
+logger = None
+
 def compare_aliases(re_ignore, alias_names, data):
     combined_keys = list(data["combined"].keys())
     combined_keys.sort()
@@ -291,6 +294,8 @@ def munge_test_data(test_data):
         test_data[test_status]['list'] = new_list
 
 def main():
+    global logger
+
     log_level_parser = log_level_args.get_parser()
 
     parser = argparse.ArgumentParser(

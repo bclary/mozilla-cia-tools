@@ -160,14 +160,15 @@ into the command line through the use of the @ syntax. Each argument
 and its value must be on separate lines in the file.
 ```
 
-### analyze_logs.py
+### create_log_summaries.py
 
 ``` shell
-$ ./analyze_logs.py --help
+$ ./create_log_summaries.py --help
 
-usage: analyze_logs.py [-h] [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
-                       --path PATH [--filename FILENAME] [--include-tests]
-                       [--dechunk] [--raw]
+usage: create_log_summaries.py [-h]
+                               [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
+                               --path PATH [--filename FILENAME]
+                               [--include-tests] [--dechunk] [--raw]
 
 Analyze downloaded Test Log files producing json summaries..
 
@@ -189,24 +190,28 @@ command line through the use of the @ syntax.
 Each argument and its value must be on separate lines in the file.
 ```
 
-### combine_logs_json.py
+### ./combine_log_summaries.py
 
 ``` shell
-$ ./combine_logs_json.py --help
+$ ./combine_log_summaries.py --help
 
-usage: combine_logs_json.py [-h] [--file FILES] [--alias ALIASES]
-                            [--differences] [--ignore IGNORE]
-                            [--munge-test-data]
+usage: combine_log_summaries.py [-h]
+                                [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
+                                [--file FILES] [--alias ALIASES]
+                                [--differences] [--ignore IGNORE]
+                                [--munge-test-data]
 
 Combine analyzed Test Log json files.
 
 optional arguments:
-  -h, --help         show this help message and exit
+  -h, --help            show this help message and exit
+  --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
+                        Logging level. (default: INFO)
   --file FILES
   --alias ALIASES
-  --differences      Output only differences in data. (default: False)
-  --ignore IGNORE    Ignore keys matching regular expression when calculating differences. (default: None)
-  --munge-test-data  Modify TEST- lines in output to improve comparibility. (default: False)
+  --differences         Output only differences in data. (default: False)
+  --ignore IGNORE       Ignore keys matching regular expression when calculating differences. (default: None)
+  --munge-test-data     Modify TEST- lines in output to improve comparibility. (default: False)
 
 You can save a set of arguments to a file and specify them later
 using the @argfile syntax. The arguments contained in the file will
