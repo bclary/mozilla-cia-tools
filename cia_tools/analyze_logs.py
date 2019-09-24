@@ -70,7 +70,7 @@ def combine_dict(left, right, **kwargs):
 def analyze_logs(args):
     logger = logging.getLogger()
 
-    re_taskcluster_wall_time = re.compile(r"\[taskcluster.*Wall Time: (?:([.\d]+)h)?(?:([.\d]+)m)?(?:([.\d]+)s)")
+    re_taskcluster_walltime = re.compile(r"\[taskcluster.*Wall Time: (?:([.\d]+)h)?(?:([.\d]+)m)?(?:([.\d]+)s)")
     re_taskcluster_taskId = re.compile(r"\[taskcluster.*Task ID: (.*)")
     re_taskcluster_completed = re.compile(r"\[taskcluster.*(Unsuccessful|Successful) task run with exit code: (\d+) completed in ([0-9.]+) seconds")
     re_revision_env = re.compile(r"(MOZ_SOURCE_CHANGESET|GECKO_HEAD_REV)(=|': ')([\w-]+)")
@@ -214,22 +214,28 @@ def analyze_logs(args):
                     taskcluster_message = line
                     data_revision[job_type_name]["taskcluster"].append(taskcluster_message)
 
-                    match = re_taskcluster_wall_time.match(line)
+                    match = re_taskcluster_walltime.match(line)
                     if match:
                         (hours, minutes, seconds) = match.groups()
-                        if "taskcluster_wall_time" not in data_revision[job_type_name]:
-                            data_revision[job_type_name]["taskcluster_walltime"] = 0
+                        if "taskcluster_walltime" not in data_revision[job_type_name]:
+                            walltime = 0
                             if hours:
-                                data_revision[job_type_name]["taskcluster_walltime"] += 3600*float(hours)
+                                walltime += 3600*float(hours)
                             if minutes:
-                                data_revision[job_type_name]["taskcluster_walltime"] += 60*float(minutes)
+                                walltime += 60*float(minutes)
                             if seconds:
-                                data_revision[job_type_name]["taskcluster_walltime"] += float(seconds)
+                                walltime += float(seconds)
+                            # store the walltime in a list so that we will collect a list
+                            # of them when using combine_job_json.py. We can then get
+                            # the mean and stdev of the values.
+                            data_revision[job_type_name]["taskcluster_walltime"] = [walltime]
                     else:
                         match = re_taskcluster_taskId.match(line)
                         if match:
-                            taskId = match.groups(1)
-                            data_revision[job_type_name]["taskcluster_taskId"] = taskId
+                            taskId = match.group(1)
+                            # store the taskId in a list so that we will collect a list
+                            # of them when using combine_job_json.py.
+                            data_revision[job_type_name]["taskcluster_taskId"] = [taskId]
                         else:
                             match = re_taskcluster_completed.match(line)
                             if match:
@@ -237,9 +243,10 @@ def analyze_logs(args):
                                 data_revision[job_type_name]["taskcluster_status"] = taskcluster_status
                                 data_revision[job_type_name]["taskcluster_exitcode"] = taskcluster_exitcode
                                 try:
-                                    data_revision[job_type_name]["taskcluster_runtime"] = float(taskcluster_runtime)
+                                    # ditto store runtime as a list.
+                                    data_revision[job_type_name]["taskcluster_runtime"] = [float(taskcluster_runtime)]
                                 except ValueError:
-                                    data_revision[job_type_name]["taskcluster_runtime"] = 0
+                                    data_revision[job_type_name]["taskcluster_runtime"] = [0]
                     continue
 
                 # Next Collect the revision. It will appear before any tests or the summary.
