@@ -6,13 +6,15 @@
 import argparse
 import json
 import logging
-import re
 
 from statistics import mean, stdev
 
+from scipy import stats
+
 from common_args import ArgumentFormatter, log_level_args
 
-from utils import ppjson
+
+logger = None
 
 
 def load_json_data(filepath):
@@ -125,8 +127,9 @@ def generate_report(aliases, measurements):
                  "{alias} mean,"
                  "{alias} stdev,"
                  "{alias} count,".format(alias=alias))
+    line += 'ttest_ind_from_stats statistic, ttest_ind_from_stats pvalue'
 
-    print(line[:-1])
+    print(line)
 
     for job_type_name in measurements:
 
@@ -143,12 +146,24 @@ def generate_report(aliases, measurements):
 
             line = job_type_name + ','
 
+            # save the values lists for each alias for use in calculating the t-test
+            alias_values = {}
+            alias_means = {}
+            alias_counts = {}
+            alias_stdevs = {}
+
             for alias in aliases:
                 if measurement_name not in measurements[job_type_name][alias]:
+                    alias_values[alias] = []
+                    alias_means[alias] = 0
+                    alias_counts[alias] = 0
+                    alias_stdevs[alias] = 0
                     count_values = None
                     mean_values = None
                     stdev_values = None
                 else:
+                    alias_values[alias] = measurements[job_type_name][alias][measurement_name]['values']
+
                     count_values = len(measurements[job_type_name][alias][measurement_name]['values'])
                     if count_values == 0:
                         continue
@@ -160,14 +175,33 @@ def generate_report(aliases, measurements):
                         mean_values = mean(measurements[job_type_name][alias][measurement_name]['values'])
                         stdev_values = stdev(measurements[job_type_name][alias][measurement_name]['values'])
 
+                    alias_means[alias] = mean_values
+                    alias_counts[alias] = count_values
+                    alias_stdevs[alias] = stdev_values
+
                 line += "%s,%s,%s,%s," % (measurement_name,
                                           mean_values,
                                           stdev_values,
                                           count_values)
-            print(line[:-1])
+            #ttest = stats.ttest_ind(alias_values[aliases[0]], alias_values[aliases[1]])
+            alias0 = aliases[0]
+            alias1 = aliases[1]
+            try:
+                ttest = stats.ttest_ind_from_stats(alias_means[alias0], alias_stdevs[alias0], alias_counts[alias0],
+                                                   alias_means[alias1], alias_stdevs[alias1], alias_counts[alias1],
+                                                   equal_var=False)
+                statistic = ttest.statistic
+                pvalue = ttest.pvalue
+            except ZeroDivisionError:
+                statistic = None
+                pvalue = None
+            line += "%s, %s" % (statistic, pvalue)
+            print(line)
 
 
 def main():
+    global logger
+
     log_level_parser = log_level_args.get_parser()
 
     parser = argparse.ArgumentParser(
