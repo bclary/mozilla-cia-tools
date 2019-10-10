@@ -16,7 +16,7 @@ if len(sys.argv) == 1:
 else:
     input = open(sys.argv[1])
 
-tasks = json.loads(input.read())
+tasks = json.load(input)
 
 keys = list(tasks.keys())
 keys.sort()

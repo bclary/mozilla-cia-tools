@@ -19,7 +19,7 @@ def query(args):
     logger.debug("query %s", args)
 
     with open(args.file) as json_file:
-        query_json = json.loads(json_file.read())
+        query_json = json.load(json_file)
     return utils.query_active_data(args, query_json, limit=10000)
 
 

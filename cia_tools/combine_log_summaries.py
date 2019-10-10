@@ -356,7 +356,7 @@ and its value must be on separate lines in the file.""",
 
     for input_file_path in args.files:
         with open(input_file_path) as input_file:
-            input_json = json.loads(input_file.read())
+            input_json = json.load(input_file)
             for key in input_json.keys():
                 data = input_json[key]
                 alias_key = combined_data["aliases"][key]

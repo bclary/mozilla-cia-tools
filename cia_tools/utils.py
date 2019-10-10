@@ -134,7 +134,7 @@ def get_remote_json(url, stream=False, params=None):
     if not parse_result.scheme or parse_result.scheme.startswith('file'):
         local_file = open(parse_result.path)
         with local_file:
-            return json.loads(local_file.read())
+            return json.load(local_file)
 
     response = requestswrapper._get(url, mimetype=JSON, stream=stream, params=params)
     if response and response.ok:
