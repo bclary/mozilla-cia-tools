@@ -96,7 +96,7 @@ class RequestsWrapper(object):
     def _post(self, url, data=None, stream=False, max_attempts=3, **params):
 
         headers = {'user-agent': self._user_agent}
-        response = retry_request(self.session.post, max_attempts, url, headers=headers, stream=stream, **params)
+        response = retry_request(self.session.post, max_attempts, url, data=data, headers=headers, stream=stream, **params)
         return response
 
 
