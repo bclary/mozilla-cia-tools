@@ -373,4 +373,5 @@ def query_tests(args, revision=""):
 
 
 def ppjson(obj):
-    print(json.dumps(obj, indent=2))
+    import sys
+    json.dump(obj, sys.stdout, indent=2)

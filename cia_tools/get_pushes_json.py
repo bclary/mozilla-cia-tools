@@ -11,6 +11,7 @@ import argparse
 import json
 import logging
 import os
+import sys
 
 import cache
 
@@ -101,9 +102,9 @@ Each argument and its value must be on separate lines in the file.
     pushes = args.func(args, args.repo)
 
     if args.raw:
-        print(pushes)
+        json.dump(pushes, sys.stdout)
     else:
-        print(json.dumps(pushes, indent=2))
+        json.dump(pushes, sys.stdout, indent=2)
 
     if args.dump_cache_stats:
         cache.stats()

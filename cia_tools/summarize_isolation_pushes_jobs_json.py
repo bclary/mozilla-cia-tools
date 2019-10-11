@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import re
+import sys
 
 import cache
 import utils
@@ -967,13 +968,13 @@ Each argument and its value must be on separate lines in the file.
     summary = args.func(args)
 
     if args.raw:
-        print(summary)
+        json.dump(summary, sys.stdout)
     elif args.csv_summary:
         output_csv_summary(args, summary)
     elif args.csv_results:
         output_csv_results(args, summary)
     else:
-        print(json.dumps(summary, indent=2))
+        json.dump(summary, sys.stdout, indent=2)
 
     if args.dump_cache_stats:
         cache.stats()

@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import re
+import sys
 
 from numbers import Number
 
@@ -577,9 +578,9 @@ Each argument and its value must be on separate lines in the file.
     data = args.func(args)
 
     if args.raw:
-        print(data)
+        json.dump(data, sys.stdout)
     else:
-        print(json.dumps(data, indent=2, sort_keys=True))
+        json.dump(data, sys.stdout, indent=2, sort_keys=True)
 
 if __name__ == '__main__':
     main()

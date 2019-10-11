@@ -6,6 +6,7 @@
 import argparse
 import json
 import logging
+import sys
 
 import utils
 
@@ -78,8 +79,8 @@ and its value must be on separate lines in the file.
     tests = args.func(args)
 
     if args.raw:
-        print(tests)
+        json.dump(tests, sys.stdout)
     else:
-        print(json.dumps(tests, indent=2))
+        json.dump(tests, sys.stdout, indent=2)
 
 main()

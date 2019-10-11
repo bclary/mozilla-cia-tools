@@ -6,6 +6,7 @@
 import argparse
 import json
 import logging
+import sys
 
 import utils
 
@@ -69,9 +70,9 @@ and its value must be on separate lines in the file.
     activedata_json = args.func(args)
 
     if args.raw:
-        print(activedata_json)
+        json.dump(activedata_json, sys.stdout)
     else:
-        print(json.dumps(activedata_json, indent=2))
+        json.dump(activedata_json, sys.stdout, indent=2)
 
 
 main()

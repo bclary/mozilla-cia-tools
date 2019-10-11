@@ -7,6 +7,7 @@ import argparse
 import json
 import logging
 import re
+import sys
 
 from numbers import Number
 
@@ -376,7 +377,7 @@ and its value must be on separate lines in the file.""",
     else:
         output_data = compare_aliases(re_ignore, alias_list, combined_data)
 
-    print("%s" % json.dumps(output_data, indent=2, sort_keys=True))
+    json.dump(output_data, sys.stdout, indent=2, sort_keys=True)
 
 
 main()
