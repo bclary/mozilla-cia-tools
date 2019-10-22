@@ -48,8 +48,13 @@ def extract_measurements(data):
 
                 for framework in data[revision][job_type_name]["perfherder_data"]:
 
-                    framework_name = framework["framework"]["name"]
-                    suites = framework["suites"]
+                    try:
+                        framework_name = framework["framework"]["name"]
+                        suites = framework["suites"]
+                    except KeyError as e:
+                        logger.warning("perfherder_data error: %s(%s) for revision %s, job_type_name %s",
+                                       e.__class__.__name__, e, revision, job_type_name)
+                        continue
 
                     for suite in suites:
                         suite_name = suite.get("name", None)
