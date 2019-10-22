@@ -112,6 +112,10 @@ def get_pushes_json(args, repo, update_cache=False):
     finally:
         CLIENT.MAX_COUNT = max_count
 
+    if all_pushes is None:
+        logger.warning("get_pushes_json({}, {}) is None".format(args, repo))
+        return []
+
     for push in all_pushes:
         cache.save(cache_attributes, push['id'], json.dumps(push, indent=2))
 
