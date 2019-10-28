@@ -194,7 +194,17 @@ def analyze_logs(args):
                 job_type_name += '/' + jobsymbol
 
         data_revision = {
-            job_type_name: {},
+            job_type_name: {
+                "perfherder": [],
+                "taskcluster": {
+                    "messages": [],
+                    "exitcode": [],
+                    "runtime": [],
+                    "walltime": [],
+                    "taskId": [],
+                    "status": [],
+                },
+            },
         }
 
         # cppunit log count of TEST-START == ActiveData pass count
@@ -212,44 +222,41 @@ def analyze_logs(args):
 
                 # Collect taskcluster data
                 if line.startswith('[taskcluster'):
-                    if "taskcluster" not in data_revision[job_type_name]:
-                        data_revision[job_type_name]["taskcluster"] = []
-                    taskcluster_message = line
-                    data_revision[job_type_name]["taskcluster"].append(taskcluster_message)
+                    data_revision[job_type_name]["taskcluster"]["messages"].append(line)
 
                     match = re_taskcluster_walltime.match(line)
                     if match:
                         (hours, minutes, seconds) = match.groups()
-                        if "taskcluster_walltime" not in data_revision[job_type_name]:
-                            walltime = 0
-                            if hours:
-                                walltime += 3600*float(hours)
-                            if minutes:
-                                walltime += 60*float(minutes)
-                            if seconds:
-                                walltime += float(seconds)
-                            # store the walltime in a list so that we will collect a list
-                            # of them when using combine_job_json.py. We can then get
-                            # the mean and stdev of the values.
-                            data_revision[job_type_name]["taskcluster_walltime"] = [walltime]
+                        walltime = 0
+                        if hours:
+                            walltime += 3600*float(hours)
+                        if minutes:
+                            walltime += 60*float(minutes)
+                        if seconds:
+                            walltime += float(seconds)
+                        # store the walltime in a list so that we will collect a list
+                        # of them when using combine_job_json.py. We can then get
+                        # the mean and stdev of the values.
+                        data_revision[job_type_name]["taskcluster"]["walltime"].append(walltime)
                     else:
                         match = re_taskcluster_taskId.match(line)
                         if match:
                             taskId = match.group(1)
                             # store the taskId in a list so that we will collect a list
                             # of them when using combine_job_json.py.
-                            data_revision[job_type_name]["taskcluster_taskId"] = [taskId]
+                            data_revision[job_type_name]["taskcluster"]["taskId"].append(taskId)
                         else:
                             match = re_taskcluster_completed.match(line)
                             if match:
                                 (taskcluster_status, taskcluster_exitcode, taskcluster_runtime) = match.groups()
-                                data_revision[job_type_name]["taskcluster_status"] = taskcluster_status
-                                data_revision[job_type_name]["taskcluster_exitcode"] = taskcluster_exitcode
+                                data_revision[job_type_name]["taskcluster"]["status"] = taskcluster_status
+                                data_revision[job_type_name]["taskcluster"]["exitcode"] = taskcluster_exitcode
                                 try:
                                     # ditto store runtime as a list.
-                                    data_revision[job_type_name]["taskcluster_runtime"] = [float(taskcluster_runtime)]
+                                    taskcluster_runtime = float(taskcluster_runtime)
                                 except ValueError:
-                                    data_revision[job_type_name]["taskcluster_runtime"] = [0]
+                                    taskcluster_runtime = 0
+                                data_revision[job_type_name]["taskcluster"]["runtime"].append(taskcluster_runtime)
                     continue
 
                 # Next Collect the revision. It will appear before any tests or the summary.
@@ -328,14 +335,8 @@ def analyze_logs(args):
                 # Look for Perfherder
                 match = re_perfherder_data.search(line)
                 if match:
-                    if 'perfherder_data' not in data_revision[job_type_name]:
-                        data_revision[job_type_name]["perfherder_data"] = []
                     perfherder_data = match.group(1)
-                    #data_revision[job_type_name]["perfherder_data"].update(
-                    #    json.loads(perfherder_data))
-                    #combine_dict(data_revision[job_type_name]["perfherder_data"],
-                    #             json.loads(perfherder_data))
-                    data_revision[job_type_name]["perfherder_data"].append(json.loads(perfherder_data))
+                    data_revision[job_type_name]["perfherder"].append(json.loads(perfherder_data))
                 # Look for the TinderboxPrint summary line.
                 match = re_tinderbox_summary.search(line)
                 if not match:

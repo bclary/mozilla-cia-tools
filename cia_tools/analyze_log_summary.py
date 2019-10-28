@@ -33,7 +33,7 @@ def extract_measurements(data):
 
             measurements[revision][job_type_name] = {}
 
-            taskcluster_runtimes = data[revision][job_type_name].get("taskcluster_runtime", [])
+            taskcluster_runtimes = data[revision][job_type_name]['taskcluster']['runtime']
             if taskcluster_runtimes:
                 none_list = [None for i in taskcluster_runtimes]
                 measurements[revision][job_type_name]["taskcluster_runtimes"] = dict(
@@ -44,15 +44,15 @@ def extract_measurements(data):
                     alerts=none_list,
                 )
 
-            if "perfherder_data" in data[revision][job_type_name]:
+            if "perfherder" in data[revision][job_type_name]:
 
-                for framework in data[revision][job_type_name]["perfherder_data"]:
+                for framework in data[revision][job_type_name]["perfherder"]:
 
                     try:
                         framework_name = framework["framework"]["name"]
                         suites = framework["suites"]
                     except KeyError as e:
-                        logger.warning("perfherder_data error: %s(%s) for revision %s, job_type_name %s",
+                        logger.warning("perfherder error: %s(%s) for revision %s, job_type_name %s",
                                        e.__class__.__name__, e, revision, job_type_name)
                         continue
 

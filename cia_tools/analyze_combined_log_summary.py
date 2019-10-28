@@ -45,7 +45,7 @@ def extract_measurements(data):
 
             measurements[job_type_name][alias] = {}
 
-            taskcluster_runtimes = data['combined'][job_type_name][alias].get("taskcluster_runtime", [])
+            taskcluster_runtimes = data['combined'][job_type_name][alias]['taskcluster']['runtime']
             if taskcluster_runtimes:
                 none_list = [None for i in taskcluster_runtimes]
                 measurements[job_type_name][alias]["taskcluster_runtimes"] = dict(
@@ -56,15 +56,15 @@ def extract_measurements(data):
                     alerts=none_list,
                 )
 
-            if "perfherder_data" in data['combined'][job_type_name][alias]:
+            if "perfherder" in data['combined'][job_type_name][alias]:
 
-                for framework in data['combined'][job_type_name][alias]["perfherder_data"]:
+                for framework in data['combined'][job_type_name][alias]["perfherder"]:
 
                     try:
                         framework_name = framework["framework"]["name"]
                         suites = framework["suites"]
                     except KeyError as e:
-                        logger.warning("perfherder_data error: %s(%s) for job_type_name %s alias %s",
+                        logger.warning("perfherder error: %s(%s) for job_type_name %s alias %s",
                                        e.__class__.__name__, e, job_type_name, alias)
                         continue
 
@@ -184,6 +184,9 @@ def generate_report(aliases, measurements):
                     alias_counts[alias] = count_values
                     alias_stdevs[alias] = stdev_values
 
+                # Remove any commas embedded in the measurement name
+                # to prevent them from interfering with the csv format.
+                measurement_name = measurement_name.replace(',', ' ')
                 line += "%s,%s,%s,%s," % (measurement_name,
                                           mean_values,
                                           stdev_values,
