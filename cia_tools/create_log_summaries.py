@@ -165,6 +165,8 @@ def analyze_logs(args):
             test_suite = 'mochitest'
         elif test_suite.startswith('reftest'):
             test_suite = 'reftest'
+        elif test_suite.startswith('sourcetest'):
+            test_suite = 'sourcetest'
         elif test_suite.startswith('web-platform-tests'):
             test_suite = 'web-platform-tests'
         elif test_suite.startswith('xpcshell'):
