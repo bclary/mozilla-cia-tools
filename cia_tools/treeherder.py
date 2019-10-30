@@ -39,10 +39,10 @@ def retry_client_request(func, max_attempts, *args, **kwargs):
                              func.__name__, attempt, max_attempts))
         except (requests.ConnectionError, requests.ConnectTimeout) as e:
             logger.error('{}: {}: Attempt {}/{}'.format(
-                func.__name.__, e.__class__.__name__, attempt, max_attempts))
+                func.__name__, e.__class__.__name__, attempt, max_attempts))
         utils.wait()
 
-    if attempt == max_attempts - 1:
+    if attempt == max_attempts:
         logger.error('Exceeded maximum attempts, aborting {}({}, {})'.format(
             func.__name__, args, kwargs))
 
@@ -163,6 +163,9 @@ def get_pushes_jobs_json(args, repo, update_cache=False):
     parser and job_args parser.
 
     """
+    if hasattr(args, 'update_cache'):
+        update_cache = args.update_cache
+
     cache_attributes_push_jobs = ['treeherder', repo, 'push_jobs']
 
     pushes = get_pushes_json(args, repo, update_cache=update_cache)
@@ -201,6 +204,9 @@ def get_pushes_jobs_job_details_json(args, repo, update_cache=False):
     push_args parser and job_args parser.
 
     """
+    if hasattr(args, 'update_cache'):
+        update_cache = args.update_cache
+
     cache_attributes = ['treeherder', repo, 'job_details']
 
     pushes = get_pushes_jobs_json(args, repo, update_cache=update_cache)

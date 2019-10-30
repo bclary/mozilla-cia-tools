@@ -32,7 +32,7 @@ def download_treeherder_job_details(args):
                      "expression not a file glob.")
         return
 
-    pushes = get_pushes_jobs_job_details_json(args, args.repo)
+    pushes = get_pushes_jobs_job_details_json(args, args.repo, update_cache=args.update_cache)
     for push in pushes:
         for job in push['jobs']:
             # get some job type meta data to allow us to encode the job type name and symbol
