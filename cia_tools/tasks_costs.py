@@ -10,7 +10,7 @@ import sys
 
 
 TRUNK = set(["autoland", "mozilla-central"])
-
+ALL = set(["autoland", "mozilla-central", "mozilla-beta", "mozilla-release", "try"])
 
 def args_key(*args):
     return ",".join(str(arg) for arg in args)
@@ -146,6 +146,8 @@ python %(prog)s --costs=costs.json --tasks=tasks.json --json 2> costs.err > cost
         for project in run_on_projects:
             if project == "trunk":
                 projects |= TRUNK
+            elif project == "all":
+                projects |= ALL
             else:
                 projects.add(project)
 
