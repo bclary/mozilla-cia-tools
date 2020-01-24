@@ -60,7 +60,7 @@ python %(prog)s --costs=costs.json --tasks=tasks.json --json 2> costs.err > cost
 """,
     )
     parser.add_argument(
-        "--costs", help="Path to json file containing costs.", required=True
+        "--costs", action='append', default=[], help="Path to json file containing costs.", required=True
     )
     parser.add_argument(
         "--tasks", help="Path to json file containing tasks.", required=True
@@ -97,8 +97,10 @@ python %(prog)s --costs=costs.json --tasks=tasks.json --json 2> costs.err > cost
 
     projects = set(args.projects)
 
-    with open(args.costs) as costs_file:
-        costs = json.load(costs_file)
+    costs = []
+    for costs_path in args.costs:
+        with open(costs_path) as costs_file:
+            costs.extend(json.load(costs_file))
 
     with open(args.tasks) as tasks_file:
         tasks = json.load(tasks_file)
