@@ -328,6 +328,15 @@ command line through the use of the @ syntax.
 Each argument and its value must be on separate lines in the file.
 ```
 
+### duplicate-opt-pgo-tasks.py
+
+Compare opt and pgo tasks and flag duplicates.
+
+``` shell
+./mach taskgraph tasks --json | ./duplicate-opt-pgo-tasks.py
+./duplicate-opt-pgo-tasks.py tasks.json
+```
+
 ### get_pushes_jobs_job_details_json.py
 
 ``` shell
@@ -692,21 +701,59 @@ command line through the use of the @ syntax.
 Each argument and its value must be on separate lines in the file.
 ```
 
-#### Example
+### tasks_costs.py
 
 ``` shell
-$ ./summarize_isolation_pushes_jobs_json.py  \
-    --bug-creation-time 2019-08-07T00:00:00 \
-	--include-failures --include-tests \
-	--add-bugzilla-suggestions \
-	--csv-summary  > /tmp/test_isolation_cache/csv-summary.csv
-```
+$ ./tasks_costs.py --help
+usage: tasks_costs.py [-h] --costs COSTS --tasks TASKS [--project PROJECTS]
+                      [--tier TIERS] [--json] [--verbose]
 
-### duplicate-opt-pgo-tasks.py
+Associate Task Labels to Task costs.
 
-Compare opt and pgo tasks and flag duplicates.
+optional arguments:
+  -h, --help          show this help message and exit
+  --costs COSTS       Path to json file containing costs.
+  --tasks TASKS       Path to json file containing tasks.
+  --project PROJECTS  One or more of mozilla-central, autoland, ... If not
+                      specified, returns all projects.
+  --tier TIERS        One or more of 1, 2, 3. If not specified, returns all
+                      projects.
+  --json              Output results in json format.
+  --verbose           Output no cost warnings.
 
-``` shell
-./mach taskgraph tasks --json | ./duplicate-opt-pgo-tasks.py
-./duplicate-opt-pgo-tasks.py tasks.json
+This script matches a costs json file to a tasks json file to
+associate a task label to costs and writes a new costs file with the
+attached task label.
+
+To obtain the costs file execute a BigQuery containing an sql query of
+the form
+
+select w.provisionerId, w.workerType, s.project, s.tier,
+       s.suite, s.groupSymbol, s.symbol, s.collection,
+       sum(s.execution*1000.0*w.cost_per_ms) as cost
+from taskclusteretl.derived_task_summary as s,
+     taskclusteretl.derived_daily_cost_per_workertype as w
+where s.workerType = w.workerType
+and s.provisionerid = w.provisionerid
+and s.date = w.date
+and s.date between '2019-12-02' and '2020-01-06'
+and s.project in ('autoland', 'try')
+and s.tier in (2, 3)
+group by provisionerId, workerType, project, tier, suite, groupSymbol, symbol, collection
+order by provisionerId, workerType, project, tier, suite, groupSymbol, symbol, collection;
+
+and save the results locally to a costs.json file.
+
+Using a source checkout, obtain a tasks json file via
+
+./mach taskgraph tasks --json  > /tmp/tasks.json
+
+Then execute
+
+python tasks_costs.py --costs=costs.json --tasks=tasks.json 2> costs.err > costs-annotated.csv
+
+or
+
+python tasks_costs.py --costs=costs.json --tasks=tasks.json --json 2> costs.err > costs-annotated.json
+
 ```

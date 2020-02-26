@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -9,8 +10,10 @@ import re
 import sys
 
 
-TRUNK = set(["autoland", "mozilla-central"])
-ALL = set(["autoland", "mozilla-central", "mozilla-beta", "mozilla-release", "try"])
+RELEASE = set(["mozilla-beta", "mozilla-release"])
+INTEGRATION = set(["autoland", "ash"])
+TRUNK = set(["autoland", "mozilla-central", "comm-central"])
+ALL = set(["try"]) | TRUNK | INTEGRATION | RELEASE
 
 def args_key(*args):
     return ",".join(str(arg) for arg in args)
@@ -150,7 +153,12 @@ python %(prog)s --costs=costs.json --tasks=tasks.json --json 2> costs.err > cost
                 projects |= TRUNK
             elif project == "all":
                 projects |= ALL
+            elif project == "integration":
+                projects |= INTEGRATION
+            elif project == "release":
+                projects |= RELEASE
             else:
+                assert project in ALL, "unknown project %s" % project
                 projects.add(project)
 
         if args.projects:
