@@ -10,10 +10,10 @@ import re
 import sys
 
 
-RELEASE = set(["mozilla-beta", "mozilla-release"])
-INTEGRATION = set(["autoland", "ash"])
+RELEASES = set(["mozilla-beta", "mozilla-central", "mozilla-release"])
+INTEGRATION = set(["autoland", "fx-team"])
 TRUNK = set(["autoland", "mozilla-central", "comm-central"])
-ALL = set(["try"]) | TRUNK | INTEGRATION | RELEASE
+ALL = set(["try"]) | TRUNK | INTEGRATION | RELEASES
 
 def args_key(*args):
     return ",".join(str(arg) for arg in args)
@@ -155,8 +155,14 @@ python %(prog)s --costs=costs.json --tasks=tasks.json --json 2> costs.err > cost
                 projects |= ALL
             elif project == "integration":
                 projects |= INTEGRATION
+            elif project == "releases":
+                projects |= RELEASES
             elif project == "release":
-                projects |= RELEASE
+                projects |= set(["mozilla-release"])
+            elif project == "central":
+                projects |= set(["mozilla-central"])
+            elif project == "beta":
+                projects |= set(["mozilla-beta"])
             else:
                 assert project in ALL, "unknown project %s" % project
                 projects.add(project)
